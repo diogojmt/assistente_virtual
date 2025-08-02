@@ -424,7 +424,17 @@ async function processarConsultaDebitosImovel(userId, documento) {
     return resultadoPertences.erro;
   }
   
-  const inscricoes = obterInscricoesPertences([resultadoPertences.dados]);
+  // Parse dos dados para extrair contribuintes estruturados
+  let contribuintes = [];
+  if (resultadoPertences.dadosEstruturados) {
+    contribuintes = resultadoPertences.dadosEstruturados;
+  } else {
+    contribuintes = [resultadoPertences.dados];
+  }
+  
+  const inscricoes = obterInscricoesPertences(contribuintes);
+  
+  logger.info(`Imóveis encontrados: ${inscricoes.imoveis.length}`);
   
   if (inscricoes.imoveis.length === 0) {
     limparEstadoUsuario(userId);
@@ -452,7 +462,17 @@ async function processarConsultaDebitosEmpresa(userId, documento) {
     return resultadoPertences.erro;
   }
   
-  const inscricoes = obterInscricoesPertences([resultadoPertences.dados]);
+  // Parse dos dados para extrair contribuintes estruturados
+  let contribuintes = [];
+  if (resultadoPertences.dadosEstruturados) {
+    contribuintes = resultadoPertences.dadosEstruturados;
+  } else {
+    contribuintes = [resultadoPertences.dados];
+  }
+  
+  const inscricoes = obterInscricoesPertences(contribuintes);
+  
+  logger.info(`Empresas encontradas: ${inscricoes.empresas.length}`);
   
   if (inscricoes.empresas.length === 0) {
     limparEstadoUsuario(userId);

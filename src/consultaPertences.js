@@ -315,8 +315,14 @@ async function consultarPertences(cpfCnpj) {
     
     logger.info('Resposta HTTP recebida');
     
+    // Log da resposta XML para debug
+    logger.debug('Resposta XML completa:', response.data);
+    
     // Fazer parse do XML
     const contribuintes = parseXMLResponse(response.data);
+    
+    // Log dos contribuintes parseados para debug
+    logger.debug('Contribuintes parseados:', JSON.stringify(contribuintes, null, 2));
     
     // Processar resposta
     if (contribuintes && contribuintes.length > 0) {
@@ -324,7 +330,8 @@ async function consultarPertences(cpfCnpj) {
       logger.info('Consulta realizada com sucesso');
       return {
         sucesso: true,
-        dados: resposta
+        dados: resposta,
+        dadosEstruturados: contribuintes
       };
     } else {
       logger.warn('Nenhum contribuinte encontrado na resposta');
