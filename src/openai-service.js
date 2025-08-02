@@ -1,5 +1,7 @@
 const axios = require('axios');
 const logger = require('./logger');
+const { consultarPertences } = require('./consultaPertences');
+const { consultarDebitos, formatarRespostaDebitos, TIPO_CONTRIBUINTE } = require('./debitosService');
 
 class OpenAIService {
   constructor() {
@@ -120,6 +122,12 @@ class OpenAIService {
         status = response.data.status;
         attempts++;
         
+        // Tratar function calling
+        if (status === 'requires_action') {
+          await this.handleRequiredAction(threadId, runId, response.data);
+          continue; // Continua o loop para aguardar a conclusão
+        }
+        
         if (status === 'failed' || status === 'cancelled' || status === 'expired') {
           throw new Error(`Run falhou com status: ${status}`);
         }
@@ -134,6 +142,113 @@ class OpenAIService {
     } catch (error) {
       logger.error('Erro ao aguardar conclusão do run:', error.message);
       throw new Error('Falha ao aguardar resposta da OpenAI');
+    }
+  }
+
+  async handleRequiredAction(threadId, runId, runData) {
+    try {
+      const toolCalls = runData.required_action.submit_tool_outputs.tool_calls;
+      const toolOutputs = [];
+
+      for (const toolCall of toolCalls) {
+        logger.info(`Executando função: ${toolCall.function.name}`);
+        
+        const functionName = toolCall.function.name;
+        const functionArgs = JSON.parse(toolCall.function.arguments);
+        
+        let output = '';
+        
+        switch (functionName) {
+          case 'consultar_pertences':
+            output = await this.executarConsultaPertences(functionArgs);
+            break;
+          case 'consultar_debitos':
+            output = await this.executarConsultaDebitos(functionArgs);
+            break;
+          default:
+            output = JSON.stringify({ erro: 'Função não encontrada' });
+        }
+        
+        toolOutputs.push({
+          tool_call_id: toolCall.id,
+          output: output
+        });
+      }
+
+      // Submeter os resultados das funções
+      await axios.post(
+        `${this.baseURL}/threads/${threadId}/runs/${runId}/submit_tool_outputs`,
+        { tool_outputs: toolOutputs },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+            'OpenAI-Beta': 'assistants=v2'
+          }
+        }
+      );
+      
+      logger.info('Tool outputs submetidos com sucesso');
+    } catch (error) {
+      logger.error('Erro ao tratar required action:', error.message);
+      throw error;
+    }
+  }
+
+  async executarConsultaPertences(args) {
+    try {
+      const { cpf_cnpj } = args;
+      logger.info(`Executando consulta de pertences para: ${cpf_cnpj}`);
+      
+      const resultado = await consultarPertences(cpf_cnpj);
+      
+      if (resultado.sucesso) {
+        return JSON.stringify({
+          sucesso: true,
+          dados: resultado.dados,
+          dadosEstruturados: resultado.dadosEstruturados
+        });
+      } else {
+        return JSON.stringify({
+          sucesso: false,
+          erro: resultado.erro
+        });
+      }
+    } catch (error) {
+      logger.error('Erro na execução de consulta de pertences:', error.message);
+      return JSON.stringify({
+        sucesso: false,
+        erro: 'Erro interno na consulta de pertences'
+      });
+    }
+  }
+
+  async executarConsultaDebitos(args) {
+    try {
+      const { tipo_contribuinte, inscricao, exercicio = '2025' } = args;
+      logger.info(`Executando consulta de débitos - Tipo: ${tipo_contribuinte}, Inscrição: ${inscricao}`);
+      
+      const resultado = await consultarDebitos(tipo_contribuinte, inscricao, exercicio);
+      
+      if (resultado.sucesso) {
+        const respostaFormatada = formatarRespostaDebitos(resultado.dados);
+        return JSON.stringify({
+          sucesso: true,
+          resposta: respostaFormatada,
+          dados: resultado.dados
+        });
+      } else {
+        return JSON.stringify({
+          sucesso: false,
+          erro: resultado.erro
+        });
+      }
+    } catch (error) {
+      logger.error('Erro na execução de consulta de débitos:', error.message);
+      return JSON.stringify({
+        sucesso: false,
+        erro: 'Erro interno na consulta de débitos'
+      });
     }
   }
 

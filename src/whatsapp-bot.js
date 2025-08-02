@@ -7,8 +7,6 @@ const {
 const qrcode = require('qrcode-terminal');
 const logger = require('./logger');
 const OpenAIService = require('./openai-service');
-const { consultarPertences, validarCpfCnpj, formatarDocumento } = require('./consultaPertences');
-const { processarMensagem, limparEstadoUsuario } = require('./conversationManager');
 
 class WhatsAppBot {
   constructor() {
@@ -118,8 +116,8 @@ class WhatsAppBot {
       await this.sock.sendPresenceUpdate('composing', fromNumber);
       
       try {
-        // Processar com o gerenciador de conversação
-        const response = await processarMensagem(fromNumber, messageText);
+        // Processar SEMPRE com OpenAI Assistant (principal)
+        const response = await this.openaiService.processMessage(messageText);
         
         // Parar indicador de "digitando"
         await this.sock.sendPresenceUpdate('paused', fromNumber);
@@ -133,19 +131,11 @@ class WhatsAppBot {
         // Parar indicador de "digitando"
         await this.sock.sendPresenceUpdate('paused', fromNumber);
         
-        // Fallback para OpenAI em caso de erro no gerenciador
-        try {
-          const response = await this.openaiService.processMessage(messageText);
-          await this.sendMessage(fromNumber, response);
-          logger.info(`Resposta OpenAI enviada para ${senderName}: "${response.substring(0, 100)}..."`);
-        } catch (openaiError) {
-          // Enviar mensagem de erro genérica
-          const errorMessage = 'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente em alguns instantes.';
-          await this.sendMessage(fromNumber, errorMessage);
-          logger.error(`Erro OpenAI para ${senderName}:`, openaiError.message);
-        }
+        // Enviar mensagem de erro genérica
+        const errorMessage = 'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente em alguns instantes.';
+        await this.sendMessage(fromNumber, errorMessage);
         
-        logger.error(`Erro no gerenciador de conversação para ${senderName}:`, error.message);
+        logger.error(`Erro ao processar mensagem de ${senderName}:`, error.message);
       }
       
     } catch (error) {
@@ -154,45 +144,7 @@ class WhatsAppBot {
     }
   }
 
-  async handleConsultaPertences(fromNumber, senderName, documento) {
-    try {
-      // Enviar mensagem de feedback
-      await this.sendMessage(fromNumber, '🔍 Aguarde um momento, estou consultando seus vínculos...');
-      
-      // Enviar indicador de "digitando"
-      await this.sock.sendPresenceUpdate('composing', fromNumber);
-      
-      logger.info(`Iniciando consulta de pertences para ${senderName} - Documento: ${formatarDocumento(documento)}`);
-      
-      // Fazer a consulta
-      const resultado = await consultarPertences(documento);
-      
-      // Parar indicador de "digitando"
-      await this.sock.sendPresenceUpdate('paused', fromNumber);
-      
-      if (resultado.sucesso) {
-        const mensagem = `✅ **Consulta de Vínculos**\n\n` +
-                        `📄 **Documento:** ${formatarDocumento(documento)}\n\n` +
-                        `${resultado.dados}`;
-        
-        await this.sendMessage(fromNumber, mensagem);
-        logger.info(`Consulta de pertences realizada com sucesso para ${senderName}`);
-      } else {
-        const mensagem = `❌ **Erro na Consulta**\n\n${resultado.erro}`;
-        await this.sendMessage(fromNumber, mensagem);
-        logger.warn(`Erro na consulta de pertences para ${senderName}: ${resultado.erro}`);
-      }
-      
-    } catch (error) {
-      // Parar indicador de "digitando"
-      await this.sock.sendPresenceUpdate('paused', fromNumber);
-      
-      const mensagem = '❌ Não foi possível realizar a consulta no momento. Tente novamente mais tarde.';
-      await this.sendMessage(fromNumber, mensagem);
-      
-      logger.error(`Erro ao processar consulta de pertences para ${senderName}:`, error.message);
-    }
-  }
+
 
   async sendMessage(to, text) {
     try {

@@ -59,8 +59,11 @@ async function consultarDebitos(tipoContribuinte, inscricao, exercicio = '2025')
     
     const chaveAPI = process.env.ABACO_API_KEY;
     if (!chaveAPI) {
+      logger.error('Chave da API Ábaco não configurada no arquivo .env');
       throw new Error('Chave da API Ábaco não configurada');
     }
+    
+    logger.debug('Usando chave API:', chaveAPI);
     
     const parametros = {
       SSEChave: chaveAPI,
@@ -99,6 +102,11 @@ async function consultarDebitos(tipoContribuinte, inscricao, exercicio = '2025')
     
   } catch (error) {
     logger.error('Erro na consulta de débitos:', error.message);
+    logger.error('Stack trace:', error.stack);
+    if (error.response) {
+      logger.error('Response status:', error.response.status);
+      logger.error('Response data:', error.response.data);
+    }
     
     if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
       return {
