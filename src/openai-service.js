@@ -162,6 +162,9 @@ class OpenAIService {
           case 'consultar_debitos':
             output = await this.executarConsultaDebitos(functionArgs);
             break;
+          case 'encerrar_atendimento':
+            output = await this.executarEncerramentoAtendimento(functionArgs);
+            break;
           default:
             output = JSON.stringify({ erro: 'Função não encontrada' });
         }
@@ -249,6 +252,29 @@ class OpenAIService {
     }
   }
 
+  async executarEncerramentoAtendimento(args) {
+    try {
+      const { usuario_id } = args;
+      logger.info(`Encerrando atendimento para usuário: ${usuario_id}`);
+      
+      // Limpar thread do usuário se fornecido
+      if (usuario_id && this.userThreads.has(usuario_id)) {
+        this.clearUserThread(usuario_id);
+      }
+      
+      return JSON.stringify({
+        sucesso: true,
+        mensagem: 'Atendimento encerrado com sucesso'
+      });
+    } catch (error) {
+      logger.error('Erro ao encerrar atendimento:', error.message);
+      return JSON.stringify({
+        sucesso: false,
+        erro: 'Erro interno ao encerrar atendimento'
+      });
+    }
+  }
+
   async getThreadMessages(threadId) {
     try {
       const response = await axios.get(
@@ -307,6 +333,13 @@ class OpenAIService {
       return responseText;
     } catch (error) {
       logger.error('Erro no processamento da mensagem:', error.message);
+      
+      // Se a thread falhou, limpar e tentar criar nova
+      if (error.message.includes('thread') || error.message.includes('run')) {
+        logger.warn(`Thread ${threadId} falhou, limpando para usuário ${userId}`);
+        this.clearUserThread(userId);
+      }
+      
       throw error;
     }
   }

@@ -79,6 +79,35 @@ Para que o Assistant possa utilizar as funcionalidades de consulta de débitos e
 
 ---
 
+## 🔚 Função 3: Encerrar Atendimento
+
+**Nome da função:** `encerrar_atendimento`
+
+**Descrição:** Encerra cordialmente o atendimento e limpa a sessão do usuário
+
+**Schema JSON:**
+```json
+{
+  "type": "function",
+  "function": {
+    "name": "encerrar_atendimento",
+    "description": "Encerra o atendimento de forma cordial quando o usuário demonstra que quer finalizar a conversa (agradece, se despede, etc.)",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "usuario_id": {
+          "type": "string",
+          "description": "ID do usuário para limpar a sessão (opcional)"
+        }
+      },
+      "required": []
+    }
+  }
+}
+```
+
+---
+
 ## 💡 Instruções para o Assistant
 
 Adicione estas instruções ao seu Assistant para que ele saiba como e quando usar as funções:
@@ -105,6 +134,18 @@ COMO USAR AS FERRAMENTAS:
    - Para empresas: tipo_contribuinte = "3"
    - Se o usuário não souber a inscrição, use primeiro consultar_pertences
 
+3. ENCERRAR ATENDIMENTO:
+   - Use quando o usuário agradecer, se despedir ou demonstrar que quer encerrar
+   - Palavras-chave: "obrigado", "tchau", "valeu", "até logo", "é só isso", "pode encerrar"
+   - Sempre seja cordial e ofereça retorno futuro
+
+TRATAMENTO DE GRANDES VOLUMES:
+- Imóveis: Limitado a 10 por consulta
+- Empresas: Limitado a 10 por consulta  
+- Débitos: Limitado a 5 detalhados por consulta
+- Sempre informe o total encontrado
+- Oriente para a Secretaria em casos de muitos resultados
+
 FLUXO TÍPICO:
 1. Usuário: "Quero ver meus débitos de IPTU"
 2. Você: Solicita CPF/CNPJ
@@ -117,6 +158,8 @@ IMPORTANTE:
 - Explique os processos quando necessário
 - Em caso de erro, oriente a procurar a Secretaria
 - CPF/CNPJ devem ter apenas números (sem pontos/traços)
+- Quando detectar encerramento, use encerrar_atendimento ANTES de responder
+- Finalize sempre de forma cordial e profissional
 ```
 
 ---
