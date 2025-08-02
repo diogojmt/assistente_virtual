@@ -27,7 +27,12 @@ class WhatsAppBot {
         printQRInTerminal: false,
         logger: logger.child({ module: 'baileys' }),
         browser: Browsers.macOS('Desktop'),
-        defaultQueryTimeoutMs: 60000
+        defaultQueryTimeoutMs: 60000,
+        connectTimeoutMs: 60000,
+        keepAliveIntervalMs: 30000,
+        markOnlineOnConnect: true,
+        syncFullHistory: false,
+        generateHighQualityLinkPreview: false
       });
 
       // Event listeners
@@ -71,18 +76,28 @@ class WhatsAppBot {
     }
     
     if (connection === 'close') {
-      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       
-      logger.info(`Conexão fechada. Motivo: ${lastDisconnect?.error?.output?.statusCode}`);
+      logger.info(`Conexão fechada. Motivo: ${statusCode}`);
       
-      if (shouldReconnect) {
-        logger.info('Tentando reconectar...');
+      if (statusCode === DisconnectReason.connectionClosed || 
+          statusCode === DisconnectReason.connectionLost ||
+          statusCode === DisconnectReason.restartRequired) {
+        logger.info('Tentando reconectar em 5 segundos...');
         setTimeout(() => this.initialize(), 5000);
+      } else if (statusCode === 401 || statusCode === DisconnectReason.loggedOut) {
+        logger.info('Sessão expirada. Delete a pasta auth_info_baileys e reinicie o bot para gerar novo QR.');
+      } else if (shouldReconnect) {
+        logger.info('Tentando reconectar em 10 segundos...');
+        setTimeout(() => this.initialize(), 10000);
       } else {
         logger.info('Desconectado. Por favor, reinicie o bot.');
       }
     } else if (connection === 'open') {
       logger.info('Bot conectado ao WhatsApp com sucesso!');
+    } else if (connection === 'connecting') {
+      logger.info('Conectando ao WhatsApp...');
     }
   }
 
