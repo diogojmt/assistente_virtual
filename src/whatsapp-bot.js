@@ -7,6 +7,7 @@ const {
 const qrcode = require('qrcode-terminal');
 const logger = require('./logger');
 const OpenAIService = require('./openai-service');
+const { consultarPertences, validarCpfCnpj, formatarDocumento } = require('./consultaPertences');
 
 class WhatsAppBot {
   constructor() {
@@ -109,6 +110,15 @@ class WhatsAppBot {
       
       logger.info(`Mensagem recebida de ${senderName} (${fromNumber}): "${messageText}"`);
       
+      // Verificar se a mensagem contém um CPF ou CNPJ
+      const documento = messageText.trim().replace(/[^\d]/g, '');
+      
+      if ((documento.length === 11 || documento.length === 14) && validarCpfCnpj(documento)) {
+        // É um CPF ou CNPJ válido - fazer consulta de pertences
+        await this.handleConsultaPertences(fromNumber, senderName, documento);
+        return;
+      }
+      
       // Enviar indicador de "digitando"
       await this.sock.sendPresenceUpdate('composing', fromNumber);
       
@@ -139,6 +149,46 @@ class WhatsAppBot {
     } catch (error) {
       logger.error('Erro geral no processamento da mensagem:', error.message);
       logger.error('Stack:', error.stack);
+    }
+  }
+
+  async handleConsultaPertences(fromNumber, senderName, documento) {
+    try {
+      // Enviar mensagem de feedback
+      await this.sendMessage(fromNumber, '🔍 Aguarde um momento, estou consultando seus vínculos...');
+      
+      // Enviar indicador de "digitando"
+      await this.sock.sendPresenceUpdate('composing', fromNumber);
+      
+      logger.info(`Iniciando consulta de pertences para ${senderName} - Documento: ${formatarDocumento(documento)}`);
+      
+      // Fazer a consulta
+      const resultado = await consultarPertences(documento);
+      
+      // Parar indicador de "digitando"
+      await this.sock.sendPresenceUpdate('paused', fromNumber);
+      
+      if (resultado.sucesso) {
+        const mensagem = `✅ **Consulta de Vínculos**\n\n` +
+                        `📄 **Documento:** ${formatarDocumento(documento)}\n\n` +
+                        `${resultado.dados}`;
+        
+        await this.sendMessage(fromNumber, mensagem);
+        logger.info(`Consulta de pertences realizada com sucesso para ${senderName}`);
+      } else {
+        const mensagem = `❌ **Erro na Consulta**\n\n${resultado.erro}`;
+        await this.sendMessage(fromNumber, mensagem);
+        logger.warn(`Erro na consulta de pertences para ${senderName}: ${resultado.erro}`);
+      }
+      
+    } catch (error) {
+      // Parar indicador de "digitando"
+      await this.sock.sendPresenceUpdate('paused', fromNumber);
+      
+      const mensagem = '❌ Não foi possível realizar a consulta no momento. Tente novamente mais tarde.';
+      await this.sendMessage(fromNumber, mensagem);
+      
+      logger.error(`Erro ao processar consulta de pertences para ${senderName}:`, error.message);
     }
   }
 
