@@ -29,8 +29,11 @@ class OpenAIService {
       logger.info(`Thread criada: ${response.data.id}`);
       return response.data.id;
     } catch (error) {
-      logger.error('Erro ao criar thread:', error.response?.data || error.message);
-      throw new Error('Falha ao criar thread da OpenAI');
+      logger.error('Erro ao criar thread:');
+      logger.error('Status:', error.response?.status);
+      logger.error('Data:', error.response?.data);
+      logger.error('Message:', error.message);
+      throw new Error(`Falha ao criar thread da OpenAI: ${error.response?.data?.error?.message || error.message}`);
     }
   }
 

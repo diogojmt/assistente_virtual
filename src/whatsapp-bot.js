@@ -133,10 +133,12 @@ class WhatsAppBot {
         await this.sendMessage(fromNumber, errorMessage);
         
         logger.error(`Erro ao processar mensagem de ${senderName}:`, error.message);
+        logger.error('Stack:', error.stack);
       }
       
     } catch (error) {
       logger.error('Erro geral no processamento da mensagem:', error.message);
+      logger.error('Stack:', error.stack);
     }
   }
 
