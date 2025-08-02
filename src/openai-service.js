@@ -14,6 +14,10 @@ class OpenAIService {
 
   async createThread() {
     try {
+      logger.info('Iniciando criação de thread...');
+      logger.info('API Key definida:', !!this.apiKey);
+      logger.info('Base URL:', this.baseURL);
+      
       const response = await axios.post(
         `${this.baseURL}/threads`,
         {},
@@ -30,10 +34,18 @@ class OpenAIService {
       return response.data.id;
     } catch (error) {
       logger.error('Erro ao criar thread:');
-      logger.error('Status:', error.response?.status);
-      logger.error('Data:', error.response?.data);
-      logger.error('Message:', error.message);
-      throw new Error(`Falha ao criar thread da OpenAI: ${error.response?.data?.error?.message || error.message}`);
+      logger.error('Tipo do erro:', typeof error);
+      logger.error('Error object:', error);
+      logger.error('Status:', error.response?.status || 'undefined');
+      logger.error('Data:', JSON.stringify(error.response?.data) || 'undefined');
+      logger.error('Message:', error.message || 'undefined');
+      logger.error('Stack:', error.stack || 'undefined');
+      
+      if (error.code) {
+        logger.error('Error code:', error.code);
+      }
+      
+      throw new Error(`Falha ao criar thread da OpenAI: ${error.response?.data?.error?.message || error.message || 'Erro desconhecido'}`);
     }
   }
 
