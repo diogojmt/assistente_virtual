@@ -101,7 +101,7 @@ class OpenAIService {
     try {
       let status = 'queued';
       let attempts = 0;
-      const maxAttempts = 60; // 60 segundos máximo para consultas grandes
+      const maxAttempts = 120; // 120 segundos máximo para consultas grandes
       
       while (status !== 'completed' && attempts < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, 1000)); // Aguarda 1 segundo
@@ -119,26 +119,39 @@ class OpenAIService {
         status = response.data.status;
         attempts++;
         
+        logger.info(`Run ${runId} status: ${status} (tentativa ${attempts}/${maxAttempts})`);
+        
         // Tratar function calling
         if (status === 'requires_action') {
+          logger.info('Run requer ação - executando function calling...');
           await this.handleRequiredAction(threadId, runId, response.data);
-          continue; // Continua o loop para aguardar a conclusão
+          // Reset attempts counter after handling action since this is expected
+          attempts = 0;
+          continue;
         }
         
-        if (status === 'failed' || status === 'cancelled' || status === 'expired') {
-          throw new Error(`Run falhou com status: ${status}`);
+        if (status === 'failed') {
+          const errorDetails = response.data.last_error || 'Erro desconhecido';
+          logger.error(`Run falhou: ${JSON.stringify(errorDetails)}`);
+          throw new Error(`Run falhou: ${errorDetails.message || errorDetails}`);
+        }
+        
+        if (status === 'cancelled' || status === 'expired') {
+          throw new Error(`Run foi ${status}`);
         }
       }
       
       if (status !== 'completed') {
-        throw new Error('Timeout aguardando conclusão do run');
+        logger.error(`Timeout após ${maxAttempts} segundos. Status final: ${status}`);
+        throw new Error(`Timeout aguardando conclusão do run. Status: ${status}`);
       }
       
       logger.info(`Run ${runId} completado com sucesso`);
       return true;
     } catch (error) {
       logger.error('Erro ao aguardar conclusão do run:', error.message);
-      throw new Error('Falha ao aguardar resposta da OpenAI');
+      logger.error('Stack trace:', error.stack);
+      throw error;
     }
   }
 
@@ -317,12 +330,14 @@ class OpenAIService {
   }
 
   async processMessage(message, userId = 'default') {
+    let threadId = null;
     try {
       logger.info(`Processando mensagem para usuário ${userId}: "${message}"`);
       
       // Obter ou criar thread para o usuário
-      let threadId = this.userThreads.get(userId);
+      threadId = this.userThreads.get(userId);
       if (!threadId) {
+        logger.info('Criando nova thread...');
         threadId = await this.createThread();
         this.userThreads.set(userId, threadId);
         logger.info(`Nova thread criada para usuário ${userId}: ${threadId}`);
@@ -331,21 +346,26 @@ class OpenAIService {
       }
       
       // Adicionar mensagem à thread
+      logger.info('Adicionando mensagem à thread...');
       await this.addMessageToThread(threadId, message);
       
       // Executar assistant
+      logger.info('Iniciando run da thread...');
       const runId = await this.runThread(threadId);
       
       // Aguardar conclusão
+      logger.info('Aguardando conclusão do run...');
       await this.waitForRunCompletion(threadId, runId);
       
       // Buscar resposta
+      logger.info('Buscando mensagens da thread...');
       const messages = await this.getThreadMessages(threadId);
       
       // A resposta mais recente será a primeira no array
       const assistantMessage = messages.find(msg => msg.role === 'assistant');
       
       if (!assistantMessage || !assistantMessage.content || !assistantMessage.content[0]) {
+        logger.error('Resposta do assistant não encontrada nas mensagens:', messages);
         throw new Error('Resposta do assistant não encontrada');
       }
       
@@ -355,9 +375,10 @@ class OpenAIService {
       return responseText;
     } catch (error) {
       logger.error('Erro no processamento da mensagem:', error.message);
+      logger.error('Stack trace completo:', error.stack);
       
       // Se a thread falhou, limpar e tentar criar nova
-      if (error.message.includes('thread') || error.message.includes('run')) {
+      if (error.message.includes('thread') || error.message.includes('run') || error.message.includes('Timeout')) {
         logger.warn(`Thread ${threadId} falhou, limpando para usuário ${userId}`);
         this.clearUserThread(userId);
       }
