@@ -204,15 +204,44 @@ function formatarRespostaDebitos(dadosAPI) {
     const debitosParaExibir = debitos.slice(0, 5);
     
     debitosParaExibir.forEach((debito, index) => {
-      resultado += `\n🔸 **Débito ${index + 1}**\n`;
+      // Criar título mais descritivo
+      let titulo = '';
+      let exercicio = '';
       
-      if (debito.SSATributo) {
-        const tributosFormatados = formatarTributos(debito.SSATributo);
-        resultado += `   📋 ${tributosFormatados}\n`;
+      // Tentar extrair ano do vencimento se SSAExercicio não estiver disponível
+      if (debito.SSAExercicio) {
+        exercicio = debito.SSAExercicio;
+      } else if (debito.SSAVencimento) {
+        const anoVencimento = new Date(debito.SSAVencimento).getFullYear();
+        if (anoVencimento && anoVencimento > 2000) {
+          exercicio = anoVencimento.toString();
+        }
       }
       
-      if (debito.SSAReferencia) {
-        resultado += `   📅 Referência: ${debito.SSAReferencia}\n`;
+      if (debito.SSATributo && debito.SSAReferencia) {
+        const tributoPrincipal = formatarTributos(debito.SSATributo).split(',')[0].trim(); // Pegar primeiro tributo
+        const exercicioStr = exercicio ? ` ${exercicio}` : '';
+        titulo = `**${tributoPrincipal}${exercicioStr} - ${debito.SSAReferencia}**`;
+      } else if (debito.SSATributo) {
+        const tributoPrincipal = formatarTributos(debito.SSATributo).split(',')[0].trim();
+        const exercicioStr = exercicio ? ` ${exercicio}` : '';
+        titulo = `**${tributoPrincipal}${exercicioStr}**`;
+      } else if (debito.SSAReferencia) {
+        const exercicioStr = exercicio ? ` ${exercicio}` : '';
+        titulo = `**Débito${exercicioStr} - ${debito.SSAReferencia}**`;
+      } else {
+        titulo = `**Débito ${index + 1}**`;
+      }
+      
+      resultado += `\n🔸 ${titulo}\n`;
+      
+      // Mostrar todos os tributos se houver mais de um
+      if (debito.SSATributo) {
+        const tributosFormatados = formatarTributos(debito.SSATributo);
+        const tributosList = tributosFormatados.split(',');
+        if (tributosList.length > 1) {
+          resultado += `   📋 Tributos: ${tributosFormatados}\n`;
+        }
       }
       
       if (debito.SSAValorTotal) {
