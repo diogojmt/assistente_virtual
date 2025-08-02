@@ -116,8 +116,8 @@ class WhatsAppBot {
       await this.sock.sendPresenceUpdate('composing', fromNumber);
       
       try {
-        // Processar SEMPRE com OpenAI Assistant (principal)
-        const response = await this.openaiService.processMessage(messageText);
+        // Processar SEMPRE com OpenAI Assistant (principal) - mantendo contexto por usuário
+        const response = await this.openaiService.processMessage(messageText, fromNumber);
         
         // Parar indicador de "digitando"
         await this.sock.sendPresenceUpdate('paused', fromNumber);

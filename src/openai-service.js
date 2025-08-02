@@ -8,6 +8,7 @@ class OpenAIService {
     this.apiKey = process.env.OPENAI_API_KEY;
     this.assistantId = process.env.OPENAI_ASSISTANT_ID;
     this.baseURL = 'https://api.openai.com/v1';
+    this.userThreads = new Map(); // Manter threads por usuário
     
     if (!this.apiKey || !this.assistantId) {
       throw new Error('OPENAI_API_KEY e OPENAI_ASSISTANT_ID devem estar definidos no arquivo .env');
@@ -16,10 +17,6 @@ class OpenAIService {
 
   async createThread() {
     try {
-      console.log('DEBUG - Iniciando criação de thread...');
-      console.log('DEBUG - API Key:', this.apiKey ? `${this.apiKey.substring(0, 20)}...` : 'UNDEFINED');
-      console.log('DEBUG - Assistant ID:', this.assistantId || 'UNDEFINED');
-      console.log('DEBUG - Base URL:', this.baseURL || 'UNDEFINED');
       
       const response = await axios.post(
         `${this.baseURL}/threads`,
@@ -271,12 +268,19 @@ class OpenAIService {
     }
   }
 
-  async processMessage(message) {
+  async processMessage(message, userId = 'default') {
     try {
-      logger.info(`Processando mensagem: "${message}"`);
+      logger.info(`Processando mensagem para usuário ${userId}: "${message}"`);
       
-      // Criar nova thread para cada mensagem
-      const threadId = await this.createThread();
+      // Obter ou criar thread para o usuário
+      let threadId = this.userThreads.get(userId);
+      if (!threadId) {
+        threadId = await this.createThread();
+        this.userThreads.set(userId, threadId);
+        logger.info(`Nova thread criada para usuário ${userId}: ${threadId}`);
+      } else {
+        logger.info(`Usando thread existente para usuário ${userId}: ${threadId}`);
+      }
       
       // Adicionar mensagem à thread
       await this.addMessageToThread(threadId, message);
@@ -305,6 +309,12 @@ class OpenAIService {
       logger.error('Erro no processamento da mensagem:', error.message);
       throw error;
     }
+  }
+
+  // Método para limpar thread de um usuário (opcional)
+  clearUserThread(userId) {
+    this.userThreads.delete(userId);
+    logger.info(`Thread do usuário ${userId} removida`);
   }
 }
 
