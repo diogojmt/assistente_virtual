@@ -14,9 +14,10 @@ class OpenAIService {
 
   async createThread() {
     try {
-      logger.info('Iniciando criação de thread...');
-      logger.info('API Key definida:', !!this.apiKey);
-      logger.info('Base URL:', this.baseURL);
+      console.log('DEBUG - Iniciando criação de thread...');
+      console.log('DEBUG - API Key:', this.apiKey ? `${this.apiKey.substring(0, 20)}...` : 'UNDEFINED');
+      console.log('DEBUG - Assistant ID:', this.assistantId || 'UNDEFINED');
+      console.log('DEBUG - Base URL:', this.baseURL || 'UNDEFINED');
       
       const response = await axios.post(
         `${this.baseURL}/threads`,
@@ -33,16 +34,15 @@ class OpenAIService {
       logger.info(`Thread criada: ${response.data.id}`);
       return response.data.id;
     } catch (error) {
-      logger.error('Erro ao criar thread:');
-      logger.error('Tipo do erro:', typeof error);
-      logger.error('Error object:', error);
-      logger.error('Status:', error.response?.status || 'undefined');
-      logger.error('Data:', JSON.stringify(error.response?.data) || 'undefined');
-      logger.error('Message:', error.message || 'undefined');
-      logger.error('Stack:', error.stack || 'undefined');
+      console.log('DEBUG - Erro ao criar thread:');
+      console.log('DEBUG - Tipo do erro:', typeof error);
+      console.log('DEBUG - Error message:', error.message);
+      console.log('DEBUG - Error stack:', error.stack);
+      console.log('DEBUG - Status:', error.response?.status);
+      console.log('DEBUG - Response data:', error.response?.data);
       
       if (error.code) {
-        logger.error('Error code:', error.code);
+        console.log('DEBUG - Error code:', error.code);
       }
       
       throw new Error(`Falha ao criar thread da OpenAI: ${error.response?.data?.error?.message || error.message || 'Erro desconhecido'}`);
