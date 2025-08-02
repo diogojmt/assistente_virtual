@@ -101,7 +101,7 @@ class OpenAIService {
     try {
       let status = 'queued';
       let attempts = 0;
-      const maxAttempts = 30; // 30 segundos máximo
+      const maxAttempts = 60; // 60 segundos máximo para consultas grandes
       
       while (status !== 'completed' && attempts < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, 1000)); // Aguarda 1 segundo
@@ -200,12 +200,34 @@ class OpenAIService {
       const { cpf_cnpj } = args;
       logger.info(`Executando consulta de pertences para: ${cpf_cnpj}`);
       
-      const resultado = await consultarPertences(cpf_cnpj);
+      // Limpar CNPJ/CPF (remover pontos, traços e barras)
+      const documentoLimpo = cpf_cnpj.replace(/[^\d]/g, '');
+      
+      const resultado = await consultarPertences(documentoLimpo);
       
       if (resultado.sucesso) {
+        // Para consultas com muitos resultados, criar resumo
+        let dados = resultado.dados;
+        if (resultado.dadosEstruturados && resultado.dadosEstruturados[0]) {
+          const contribuinte = resultado.dadosEstruturados[0];
+          const qtdImoveis = contribuinte.SDTRetornoPertencesImovel ? contribuinte.SDTRetornoPertencesImovel.length : 0;
+          const qtdEmpresas = contribuinte.SDTRetornoPertencesEmpresa ? contribuinte.SDTRetornoPertencesEmpresa.length : 0;
+          
+          // Se tem muitos imóveis, criar resposta resumida
+          if (qtdImoveis > 100) {
+            dados = `👤 **Nome:** ${contribuinte.SRPNomeContribuinte}\n` +
+                   `📄 **Documento:** ${contribuinte.SRPCPFCNPJContribuinte}\n` +
+                   `🏢 **Empresas:** ${qtdEmpresas}\n` +
+                   `🏠 **Imóveis:** ${qtdImoveis}\n\n` +
+                   `⚠️ Este contribuinte possui um grande número de imóveis (${qtdImoveis}). ` +
+                   `Para consultas específicas, informe a inscrição do imóvel desejado ou ` +
+                   `procure a Secretaria Municipal da Fazenda.`;
+          }
+        }
+        
         return JSON.stringify({
           sucesso: true,
-          dados: resultado.dados,
+          dados: dados,
           dadosEstruturados: resultado.dadosEstruturados
         });
       } else {

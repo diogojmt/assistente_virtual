@@ -309,7 +309,7 @@ async function consultarPertences(cpfCnpj) {
           'Content-Type': 'text/xml; charset=utf-8',
           'SOAPAction': '"Execute"'
         },
-        timeout: 30000
+        timeout: 45000 // Aumentar timeout para consultas grandes
       }
     );
     
