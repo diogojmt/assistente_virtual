@@ -8,6 +8,7 @@ const qrcode = require('qrcode-terminal');
 const logger = require('./logger');
 const OpenAIService = require('./openai-service');
 const { consultarPertences, validarCpfCnpj, formatarDocumento } = require('./consultaPertences');
+const { processarMensagem, limparEstadoUsuario } = require('./conversationManager');
 
 class WhatsAppBot {
   constructor() {
@@ -110,21 +111,12 @@ class WhatsAppBot {
       
       logger.info(`Mensagem recebida de ${senderName} (${fromNumber}): "${messageText}"`);
       
-      // Verificar se a mensagem contém um CPF ou CNPJ
-      const documento = messageText.trim().replace(/[^\d]/g, '');
-      
-      if ((documento.length === 11 || documento.length === 14) && validarCpfCnpj(documento)) {
-        // É um CPF ou CNPJ válido - fazer consulta de pertences
-        await this.handleConsultaPertences(fromNumber, senderName, documento);
-        return;
-      }
-      
       // Enviar indicador de "digitando"
       await this.sock.sendPresenceUpdate('composing', fromNumber);
       
       try {
-        // Processar com OpenAI
-        const response = await this.openaiService.processMessage(messageText);
+        // Processar com o gerenciador de conversação
+        const response = await processarMensagem(fromNumber, messageText);
         
         // Parar indicador de "digitando"
         await this.sock.sendPresenceUpdate('paused', fromNumber);
@@ -138,12 +130,19 @@ class WhatsAppBot {
         // Parar indicador de "digitando"
         await this.sock.sendPresenceUpdate('paused', fromNumber);
         
-        // Enviar mensagem de erro
-        const errorMessage = 'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente em alguns instantes.';
-        await this.sendMessage(fromNumber, errorMessage);
+        // Fallback para OpenAI em caso de erro no gerenciador
+        try {
+          const response = await this.openaiService.processMessage(messageText);
+          await this.sendMessage(fromNumber, response);
+          logger.info(`Resposta OpenAI enviada para ${senderName}: "${response.substring(0, 100)}..."`);
+        } catch (openaiError) {
+          // Enviar mensagem de erro genérica
+          const errorMessage = 'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente em alguns instantes.';
+          await this.sendMessage(fromNumber, errorMessage);
+          logger.error(`Erro OpenAI para ${senderName}:`, openaiError.message);
+        }
         
-        logger.error(`Erro ao processar mensagem de ${senderName}:`, error.message);
-        logger.error('Stack:', error.stack);
+        logger.error(`Erro no gerenciador de conversação para ${senderName}:`, error.message);
       }
       
     } catch (error) {

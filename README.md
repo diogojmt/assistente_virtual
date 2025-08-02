@@ -1,11 +1,13 @@
 # Bot WhatsApp + OpenAI Assistant
 
-Bot para WhatsApp que integra com a OpenAI Assistants API para fornecer respostas inteligentes automáticas.
+Bot para WhatsApp que integra com a OpenAI Assistants API para fornecer respostas inteligentes automáticas e consulta de dados municipais através de WebServices SOAP.
 
 ## Funcionalidades
 
 - 🤖 Integração completa com OpenAI Assistants API
 - 📱 Bot WhatsApp usando Baileys
+- 🏛️ Consulta de pertences municipais via WebService SOAP
+- 🔍 Validação de CPF/CNPJ com algoritmo nativo
 - 🔒 Configuração segura com variáveis de ambiente
 - 📝 Logging detalhado para diagnósticos
 - 🔄 Tratamento robusto de erros
@@ -13,10 +15,11 @@ Bot para WhatsApp que integra com a OpenAI Assistants API para fornecer resposta
 
 ## Pré-requisitos
 
-- Node.js 18+ 
+- Node.js 22.17.0+ 
 - Conta OpenAI com API key
 - Assistant criado na plataforma OpenAI
 - WhatsApp Business (recomendado)
+- Acesso ao WebService SOAP de consulta de pertences (opcional)
 
 ## Instalação
 
@@ -73,12 +76,13 @@ npm start
 ```
 assistente_virtual/
 ├── src/
-│   ├── logger.js          # Configuração de logs
-│   ├── openai-service.js  # Integração com OpenAI
-│   └── whatsapp-bot.js    # Bot do WhatsApp
-├── index.js               # Arquivo principal
+│   ├── consultaPertences.js # Consulta de pertences via SOAP
+│   ├── logger.js           # Configuração de logs
+│   ├── openai-service.js   # Integração com OpenAI
+│   └── whatsapp-bot.js     # Bot do WhatsApp
+├── index.js                # Arquivo principal
 ├── package.json
-├── .env                   # Variáveis de ambiente
+├── .env                    # Variáveis de ambiente
 ├── .gitignore
 └── README.md
 ```
@@ -111,11 +115,34 @@ O bot inclui tratamento robusto para:
 - Mensagens inválidas
 - Timeouts e rate limits
 
+## Recursos Adicionais
+
+### Consulta de Pertences Municipais
+
+O bot inclui funcionalidade para consulta de dados municipais via WebService SOAP:
+
+- Consulta de vínculos empresariais e imobiliários por CPF/CNPJ
+- Validação de documentos com algoritmo nativo
+- Formatação inteligente de respostas
+- Tratamento de erros específicos do serviço
+- Limitação automática de resultados para melhor visualização
+
+### Dependências
+
+- **@whiskeysockets/baileys**: Cliente WhatsApp Web
+- **axios**: Cliente HTTP para requisições
+- **dotenv**: Gerenciamento de variáveis de ambiente
+- **express**: Framework web para endpoints
+- **pino**: Sistema de logging estruturado
+- **qrcode-terminal**: Exibição de QR Code no terminal
+- **soap**: Cliente para WebServices SOAP
+
 ## Limitações
 
 - Uma thread OpenAI por mensagem (não mantém contexto entre mensagens)
 - Suporte apenas para mensagens de texto
 - Rate limits da OpenAI aplicam-se
+- Consulta de pertences limitada ao ambiente de homologação
 
 ## Contribuição
 
