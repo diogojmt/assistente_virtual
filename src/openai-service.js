@@ -133,6 +133,12 @@ class OpenAIService {
         if (status === 'failed') {
           const errorDetails = response.data.last_error || 'Erro desconhecido';
           logger.error(`Run falhou: ${JSON.stringify(errorDetails)}`);
+          
+          // Tratar erro específico de rate limit
+          if (errorDetails.code === 'rate_limit_exceeded' && errorDetails.message?.includes('tokens per min')) {
+            throw new Error('A consulta contém muitos dados. Tente uma consulta mais específica ou procure a Secretaria Municipal da Fazenda.');
+          }
+          
           throw new Error(`Run falhou: ${errorDetails.message || errorDetails}`);
         }
         
@@ -219,30 +225,64 @@ class OpenAIService {
       const resultado = await consultarPertences(documentoLimpo);
       
       if (resultado.sucesso) {
-        // Para consultas com muitos resultados, criar resumo
         let dados = resultado.dados;
+        let dadosParaIA = null;
+        
         if (resultado.dadosEstruturados && resultado.dadosEstruturados[0]) {
           const contribuinte = resultado.dadosEstruturados[0];
           const qtdImoveis = contribuinte.SDTRetornoPertencesImovel ? contribuinte.SDTRetornoPertencesImovel.length : 0;
           const qtdEmpresas = contribuinte.SDTRetornoPertencesEmpresa ? contribuinte.SDTRetornoPertencesEmpresa.length : 0;
           
-          // Se tem muitos imóveis, criar resposta resumida
-          if (qtdImoveis > 100) {
-            dados = `👤 **Nome:** ${contribuinte.SRPNomeContribuinte}\n` +
-                   `📄 **Documento:** ${contribuinte.SRPCPFCNPJContribuinte}\n` +
-                   `🏢 **Empresas:** ${qtdEmpresas}\n` +
-                   `🏠 **Imóveis:** ${qtdImoveis}\n\n` +
-                   `⚠️ Este contribuinte possui um grande número de imóveis (${qtdImoveis}). ` +
-                   `Para consultas específicas, informe a inscrição do imóvel desejado ou ` +
-                   `procure a Secretaria Municipal da Fazenda.`;
+          // Limite para evitar rate limit: máximo 50 imóveis e 50 empresas nos dados estruturados
+          if (qtdImoveis > 50 || qtdEmpresas > 50) {
+            logger.warn(`Contribuinte com muitos pertences: ${qtdImoveis} imóveis, ${qtdEmpresas} empresas. Limitando dados enviados à IA.`);
+            
+            // Criar versão limitada para IA
+            const contribuinteLimitado = {
+              ...contribuinte,
+              SDTRetornoPertencesImovel: contribuinte.SDTRetornoPertencesImovel ? contribuinte.SDTRetornoPertencesImovel.slice(0, 20) : [],
+              SDTRetornoPertencesEmpresa: contribuinte.SDTRetornoPertencesEmpresa ? contribuinte.SDTRetornoPertencesEmpresa.slice(0, 20) : []
+            };
+            dadosParaIA = [contribuinteLimitado];
+            
+            // Se tem MUITOS imóveis (>100), criar resposta super resumida
+            if (qtdImoveis > 100) {
+              dados = `👤 **Nome:** ${contribuinte.SRPNomeContribuinte}\n` +
+                     `📄 **Documento:** ${contribuinte.SRPCPFCNPJContribuinte}\n` +
+                     `🏢 **Empresas:** ${qtdEmpresas}\n` +
+                     `🏠 **Imóveis:** ${qtdImoveis}\n\n` +
+                     `⚠️ Este contribuinte possui um grande número de imóveis (${qtdImoveis}). ` +
+                     `Para consultas específicas, informe a inscrição do imóvel desejado ou ` +
+                     `procure a Secretaria Municipal da Fazenda.`;
+            }
+          } else {
+            // Dados normais para contribuintes com poucos pertences
+            dadosParaIA = resultado.dadosEstruturados;
           }
         }
         
-        return JSON.stringify({
+        // Verificar tamanho estimado em tokens (aproximadamente 4 caracteres por token)
+        const responseObj = {
           sucesso: true,
           dados: dados,
-          dadosEstruturados: resultado.dadosEstruturados
-        });
+          dadosEstruturados: dadosParaIA
+        };
+        
+        const jsonString = JSON.stringify(responseObj);
+        const estimatedTokens = Math.ceil(jsonString.length / 4);
+        
+        // Se ainda muito grande, usar apenas dados formatados sem estruturados
+        if (estimatedTokens > 25000) {
+          logger.warn(`Resposta ainda muito grande (${estimatedTokens} tokens estimados). Removendo dados estruturados.`);
+          return JSON.stringify({
+            sucesso: true,
+            dados: dados,
+            dadosEstruturados: null
+          });
+        }
+        
+        logger.info(`Resposta com tamanho estimado: ${estimatedTokens} tokens`);
+        return jsonString;
       } else {
         return JSON.stringify({
           sucesso: false,

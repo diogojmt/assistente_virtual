@@ -59,8 +59,15 @@ class WhatsAppBot {
     const { connection, lastDisconnect, qr } = update;
     
     if (qr) {
-      logger.info('QR Code gerado. Escaneie com seu WhatsApp:');
+      logger.info('='.repeat(60));
+      logger.info('QR CODE PARA WHATSAPP - Escaneie com seu celular:');
+      logger.info('Se o QR estiver muito grande, diminua o zoom do terminal');
+      logger.info('Ou copie este link e abra no navegador para ver o QR:');
+      logger.info(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
+      logger.info('='.repeat(60));
       qrcode.generate(qr, { small: true });
+      logger.info('='.repeat(60));
+      logger.info('Aguardando conexão...');
     }
     
     if (connection === 'close') {
