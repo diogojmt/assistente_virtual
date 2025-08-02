@@ -35,11 +35,19 @@ function detectarIntencao(mensagem) {
     return { tipo: 'encerramento' };
   }
   
+  // Detectar seleção numérica simples (1, 2, 3, etc.)
+  if (/^\d{1,2}$/.test(msg.trim())) {
+    return {
+      tipo: 'selecao_numerica',
+      numero: parseInt(msg.trim())
+    };
+  }
+  
   // Detectar CPF/CNPJ na mensagem
   const documentoMatch = msg.match(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}|\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}|\d{11}|\d{14}/);
   
-  // Detectar inscrição imobiliária (geralmente números longos)
-  const inscricaoMatch = msg.match(/\d{10,}/);
+  // Detectar inscrição imobiliária/municipal (números entre 4 e 15 dígitos)
+  const inscricaoMatch = msg.match(/\b\d{4,15}\b/);
   
   // Detectar solicitações de débitos
   if (/d[eé]bit|deve|devo|pag|cobr|iptu|iss|cosip|taxa/i.test(msg)) {
@@ -47,7 +55,7 @@ function detectarIntencao(mensagem) {
       return {
         tipo: CONSULTA_TIPOS.DEBITOS_IMOVEL,
         documento: documentoMatch ? documentoMatch[0] : null,
-        inscricao: inscricaoMatch ? inscricaoMatch[0] : null
+        inscricao: inscricaoMatch && !documentoMatch ? inscricaoMatch[0] : null
       };
     } else if (/empresa|cnpj|negócio|neg[oó]cio|iss|firma/i.test(msg)) {
       return {
@@ -78,8 +86,8 @@ function detectarIntencao(mensagem) {
     };
   }
   
-  // Se apenas número (possível inscrição)
-  if (inscricaoMatch && msg.length <= 20) {
+  // Se apenas número (possível inscrição) - mas não CPF/CNPJ
+  if (inscricaoMatch && !documentoMatch && msg.length <= 20) {
     return {
       tipo: 'inscricao',
       inscricao: inscricaoMatch[0]
@@ -183,10 +191,10 @@ async function processarMensagem(userId, mensagem) {
         return await processarCpfCnpj(userId, intencao);
         
       case ESTADOS.SELECIONANDO_IMOVEL:
-        return await processarSelecaoImovel(userId, mensagem);
+        return await processarSelecaoImovel(userId, intencao);
         
       case ESTADOS.SELECIONANDO_EMPRESA:
-        return await processarSelecaoEmpresa(userId, mensagem);
+        return await processarSelecaoEmpresa(userId, intencao);
         
       case ESTADOS.AGUARDANDO_INSCRICAO:
         return await processarInscricao(userId, intencao);
@@ -294,59 +302,96 @@ async function processarCpfCnpj(userId, intencao) {
   return 'Por favor, me informe um CPF ou CNPJ válido:';
 }
 
-async function processarSelecaoImovel(userId, mensagem) {
+async function processarSelecaoImovel(userId, intencao) {
   const estado = obterEstadoUsuario(userId);
-  const opcao = parseInt(mensagem.trim());
   
-  if (opcao && opcao > 0 && opcao <= estado.opcoes.length) {
-    const imovelSelecionado = estado.opcoes[opcao - 1];
-    return await consultarDebitosPorInscricao(TIPO_CONTRIBUINTE.IMOVEL, imovelSelecionado.inscricao);
+  if (intencao.tipo === 'selecao_numerica') {
+    const opcao = intencao.numero;
+    if (opcao > 0 && opcao <= estado.opcoes.length) {
+      const imovelSelecionado = estado.opcoes[opcao - 1];
+      limparEstadoUsuario(userId);
+      return await consultarDebitosPorInscricao(TIPO_CONTRIBUINTE.IMOVEL, imovelSelecionado.inscricao);
+    }
   }
   
   // Verificar se é uma inscrição direta
-  const inscricaoMatch = mensagem.match(/\d{10,}/);
-  if (inscricaoMatch) {
-    return await consultarDebitosPorInscricao(TIPO_CONTRIBUINTE.IMOVEL, inscricaoMatch[0]);
+  if (intencao.inscricao) {
+    limparEstadoUsuario(userId);
+    return await consultarDebitosPorInscricao(TIPO_CONTRIBUINTE.IMOVEL, intencao.inscricao);
   }
   
   return 'Por favor, digite o número do imóvel da lista ou a inscrição imobiliária:';
 }
 
-async function processarSelecaoEmpresa(userId, mensagem) {
+async function processarSelecaoEmpresa(userId, intencao) {
   const estado = obterEstadoUsuario(userId);
-  const opcao = parseInt(mensagem.trim());
   
-  if (opcao && opcao > 0 && opcao <= estado.opcoes.length) {
-    const empresaSelecionada = estado.opcoes[opcao - 1];
-    return await consultarDebitosPorInscricao(TIPO_CONTRIBUINTE.EMPRESA, empresaSelecionada.inscricao);
+  if (intencao.tipo === 'selecao_numerica') {
+    const opcao = intencao.numero;
+    if (opcao > 0 && opcao <= estado.opcoes.length) {
+      const empresaSelecionada = estado.opcoes[opcao - 1];
+      limparEstadoUsuario(userId);
+      return await consultarDebitosPorInscricao(TIPO_CONTRIBUINTE.EMPRESA, empresaSelecionada.inscricao);
+    }
   }
   
   // Verificar se é uma inscrição direta
-  const inscricaoMatch = mensagem.match(/\d{10,}/);
-  if (inscricaoMatch) {
-    return await consultarDebitosPorInscricao(TIPO_CONTRIBUINTE.EMPRESA, inscricaoMatch[0]);
+  if (intencao.inscricao) {
+    limparEstadoUsuario(userId);
+    return await consultarDebitosPorInscricao(TIPO_CONTRIBUINTE.EMPRESA, intencao.inscricao);
   }
   
   return 'Por favor, digite o número da empresa da lista ou a inscrição municipal:';
 }
 
-async function processarInscricao(userId, mensagem) {
+async function processarInscricao(userId, intencao) {
   const estado = obterEstadoUsuario(userId);
-  const opcao = parseInt(mensagem.trim());
   
-  if (opcao === 1) {
-    return await consultarDebitosPorInscricao(TIPO_CONTRIBUINTE.IMOVEL, estado.inscricao);
-  } else if (opcao === 2) {
-    return await consultarDebitosPorInscricao(TIPO_CONTRIBUINTE.EMPRESA, estado.inscricao);
+  // Se tem inscrição definida (vinda de detecção anterior)
+  if (estado.inscricao) {
+    const opcao = intencao.tipo === 'selecao_numerica' ? intencao.numero : parseInt(intencao.mensagem?.trim() || '0');
+    
+    if (opcao === 1) {
+      limparEstadoUsuario(userId);
+      return await consultarDebitosPorInscricao(TIPO_CONTRIBUINTE.IMOVEL, estado.inscricao);
+    } else if (opcao === 2) {
+      limparEstadoUsuario(userId);
+      return await consultarDebitosPorInscricao(TIPO_CONTRIBUINTE.EMPRESA, estado.inscricao);
+    }
+    
+    return 'Por favor, digite 1 para imóvel ou 2 para empresa:';
   }
   
-  return 'Por favor, digite 1 para imóvel ou 2 para empresa:';
+  // Se tem documento e está selecionando opção do menu
+  if (estado.documento && intencao.tipo === 'selecao_numerica') {
+    const opcao = intencao.numero;
+    
+    switch (opcao) {
+      case 1:
+        return await processarConsultaDebitosGeral(userId, estado.documento);
+      case 2:
+        return await processarConsultaDebitosImovel(userId, estado.documento);
+      case 3:
+        return await processarConsultaDebitosEmpresa(userId, estado.documento);
+      case 4:
+        return await processarConsultaPertences(userId, estado.documento);
+      default:
+        return 'Por favor, digite um número de 1 a 4 ou descreva o que precisa:';
+    }
+  }
+  
+  return 'Por favor, escolha uma opção válida:';
 }
 
 async function processarDocumentoGenerico(userId, documento) {
   if (!validarCpfCnpj(documento)) {
     return 'CPF ou CNPJ inválido. Por favor, verifique o número.';
   }
+  
+  atualizarEstadoUsuario(userId, {
+    estado: ESTADOS.AGUARDANDO_INSCRICAO,
+    documento: documento
+  });
   
   return 'Recebi seu CPF/CNPJ. O que você gostaria de consultar?\n\n' +
          '1. 💰 Todos os débitos em meu nome\n' +

@@ -100,6 +100,9 @@ class WhatsAppBot {
       // Ignorar mensagens do próprio bot
       if (message.key.fromMe) return;
       
+      // Ignorar mensagens de status
+      if (message.key.remoteJid === 'status@broadcast') return;
+      
       // Verificar se é mensagem de texto
       const messageText = message.message?.conversation || 
                          message.message?.extendedTextMessage?.text;
