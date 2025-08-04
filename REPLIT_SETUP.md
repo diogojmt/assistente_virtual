@@ -29,6 +29,8 @@ ABACO_API_KEY=sua_chave_abaco_aqui
 ```
 
 ### 3. Reconstruir o Ambiente
+
+**Opção A - Normal:**
 No **Shell** do Replit, execute:
 ```bash
 # Recarregar ambiente com novas dependências
@@ -36,7 +38,16 @@ exit
 # Aguarde a reconstrução automática
 ```
 
-Ou use o botão **"Reload Environment"** se disponível.
+**Opção B - Se houve erro de build Nix:**
+```bash
+# Aplicar correção automática
+chmod +x fix-replit-nix.sh
+./fix-replit-nix.sh
+
+# Ou corrigir manualmente
+cp replit-minimal.nix replit.nix
+exit
+```
 
 ### 4. Verificar Instalação
 Execute no shell:
@@ -87,6 +98,17 @@ Script de teste específico:
 - Testa serviço de transcrição
 - Diagnóstica problemas
 
+### `replit-minimal.nix`
+Configuração de backup minimalista:
+- Para casos de erro de build Nix
+- Versão simplificada e estável
+
+### `fix-replit-nix.sh`
+Script de correção automática:
+- Corrige erros de build Nix
+- Aplica configuração minimalista
+- Faz backup da configuração original
+
 ## 🎤 Transcrição de Áudios
 
 ### Características
@@ -110,6 +132,39 @@ Script de teste específico:
 - 📱 Mensagem de confirmação da transcrição
 
 ## 🔧 Solução de Problemas
+
+### Erro de Build do Nix Environment
+
+Se você ver erro como "couldn't get nix env building":
+
+1. **Fazer backup da configuração** (opcional):
+   ```bash
+   mv replit.nix replit.nix.backup
+   mv .replit .replit.backup
+   ```
+
+2. **Usar configuração minimalista**:
+   ```bash
+   # Criar replit.nix simples
+   cat > replit.nix << 'EOF'
+   { pkgs }: {
+     deps = [
+       pkgs.nodejs
+       pkgs.ffmpeg
+     ];
+   }
+   EOF
+   ```
+
+3. **Recarregar ambiente**:
+   - Use "Shell" → "Kill shell" → Aguardar recriação
+   - Ou clique em "Restart Repl" se disponível
+
+4. **Testar instalação**:
+   ```bash
+   ffmpeg -version
+   node test-ffmpeg.js
+   ```
 
 ### FFmpeg não encontrado
 ```bash

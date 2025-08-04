@@ -21,7 +21,7 @@ start = "typescript-language-server --stdio"
 
 # Configuração do Nix
 [nix]
-channel = "stable-23.05"
+channel = "stable-22_11"
 
 # Configuração de deploys (opcional)
 [deployment]

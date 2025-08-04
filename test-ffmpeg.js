@@ -37,9 +37,11 @@ async function testFFmpeg() {
     
     console.log('\n🔧 Para corrigir no Replit:');
     console.log('1. Verifique se o arquivo replit.nix existe');
-    console.log('2. Execute "Reload Environment" no Replit');
-    console.log('3. Aguarde a reconstrução do ambiente');
-    console.log('4. Execute este teste novamente');
+    console.log('2. Se houve erro de build Nix, use configuração mínima:');
+    console.log('   cp replit-minimal.nix replit.nix');
+    console.log('3. Reinicie o shell: Shell → Kill shell');
+    console.log('4. Aguarde a reconstrução do ambiente');
+    console.log('5. Execute este teste novamente');
     
     return false;
   }
