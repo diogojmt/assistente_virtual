@@ -2,16 +2,19 @@ const {
   default: makeWASocket, 
   DisconnectReason, 
   useMultiFileAuthState,
-  Browsers
+  Browsers,
+  downloadMediaMessage
 } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const logger = require('./logger');
 const OpenAIService = require('./openai-service');
+const AudioTranscriptionService = require('./audio-transcription-service');
 
 class WhatsAppBot {
   constructor() {
     this.sock = null;
     this.openaiService = new OpenAIService();
+    this.audioService = new AudioTranscriptionService();
   }
 
   async initialize() {
@@ -123,46 +126,143 @@ class WhatsAppBot {
       // Ignorar mensagens de status
       if (message.key.remoteJid === 'status@broadcast') return;
       
+      const fromNumber = message.key.remoteJid;
+      const senderName = message.pushName || 'Usuário';
+      
+      // Verificar se é mensagem de áudio
+      const audioMessage = message.message?.audioMessage;
+      if (audioMessage) {
+        await this.processAudioMessage(message, fromNumber, senderName);
+        return;
+      }
+      
       // Verificar se é mensagem de texto
       const messageText = message.message?.conversation || 
                          message.message?.extendedTextMessage?.text;
       
       if (!messageText) return;
       
-      const fromNumber = message.key.remoteJid;
-      const senderName = message.pushName || 'Usuário';
-      
       logger.info(`Mensagem recebida de ${senderName} (${fromNumber}): "${messageText}"`);
       
-      // Enviar indicador de "digitando"
-      await this.sock.sendPresenceUpdate('composing', fromNumber);
-      
-      try {
-        // Processar SEMPRE com OpenAI Assistant (principal) - mantendo contexto por usuário
-        const response = await this.openaiService.processMessage(messageText, fromNumber);
-        
-        // Parar indicador de "digitando"
-        await this.sock.sendPresenceUpdate('paused', fromNumber);
-        
-        // Enviar resposta
-        await this.sendMessage(fromNumber, response);
-        
-        logger.info(`Resposta enviada para ${senderName}: "${response.substring(0, 100)}..."`);
-        
-      } catch (error) {
-        // Parar indicador de "digitando"
-        await this.sock.sendPresenceUpdate('paused', fromNumber);
-        
-        // Enviar mensagem de erro genérica
-        const errorMessage = 'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente em alguns instantes.';
-        await this.sendMessage(fromNumber, errorMessage);
-        
-        logger.error(`Erro ao processar mensagem de ${senderName}:`, error.message);
-      }
+      // Processar mensagem de texto
+      await this.processTextMessage(messageText, fromNumber, senderName);
       
     } catch (error) {
       logger.error('Erro geral no processamento da mensagem:', error.message);
       logger.error('Stack:', error.stack);
+    }
+  }
+
+  async processTextMessage(messageText, fromNumber, senderName) {
+    try {
+      // Enviar indicador de "digitando"
+      await this.sock.sendPresenceUpdate('composing', fromNumber);
+      
+      // Processar SEMPRE com OpenAI Assistant (principal) - mantendo contexto por usuário
+      const response = await this.openaiService.processMessage(messageText, fromNumber);
+      
+      // Parar indicador de "digitando"
+      await this.sock.sendPresenceUpdate('paused', fromNumber);
+      
+      // Enviar resposta
+      await this.sendMessage(fromNumber, response);
+      
+      logger.info(`Resposta enviada para ${senderName}: "${response.substring(0, 100)}..."`);
+      
+    } catch (error) {
+      // Parar indicador de "digitando"
+      await this.sock.sendPresenceUpdate('paused', fromNumber);
+      
+      // Enviar mensagem de erro genérica
+      const errorMessage = 'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente em alguns instantes.';
+      await this.sendMessage(fromNumber, errorMessage);
+      
+      logger.error(`Erro ao processar mensagem de ${senderName}:`, error.message);
+    }
+  }
+
+  async processAudioMessage(message, fromNumber, senderName) {
+    try {
+      const audioMessage = message.message.audioMessage;
+      const durationSeconds = audioMessage.seconds || 0;
+      
+      logger.info(`Áudio recebido de ${senderName} (${fromNumber}): ${durationSeconds}s`);
+      
+      // Verificar duração máxima (30 segundos)
+      if (durationSeconds > 30) {
+        await this.sendMessage(fromNumber, '⚠️ Áudio muito longo. Por favor, envie um áudio de até 30 segundos.');
+        return;
+      }
+      
+      // Enviar indicador de "gravando áudio" para mostrar que está processando
+      await this.sock.sendPresenceUpdate('recording', fromNumber);
+      
+      try {
+        // Fazer download do áudio
+        logger.info('Fazendo download do áudio...');
+        const audioBuffer = await downloadMediaMessage(message, 'buffer', {});
+        
+        if (!audioBuffer || audioBuffer.length === 0) {
+          throw new Error('Falha no download do áudio');
+        }
+        
+        logger.info(`Áudio baixado: ${audioBuffer.length} bytes`);
+        
+        // Alterar para "digitando" durante transcrição
+        await this.sock.sendPresenceUpdate('composing', fromNumber);
+        
+        // Transcrever áudio
+        logger.info('Iniciando transcrição...');
+        const transcription = await this.audioService.processAudio(audioBuffer, 'whatsapp_audio', 30);
+        
+        if (!transcription || transcription.trim().length === 0) {
+          throw new Error('Transcrição vazia ou inválida');
+        }
+        
+        logger.info(`Transcrição concluída: "${transcription}"`);
+        
+        // Enviar confirmação da transcrição
+        const confirmationMessage = `🎤 Transcrevi seu áudio: "${transcription}"`;
+        await this.sendMessage(fromNumber, confirmationMessage);
+        
+        // Processar o texto transcrito como uma mensagem normal
+        logger.info('Processando texto transcrito...');
+        const response = await this.openaiService.processMessage(transcription, fromNumber);
+        
+        // Parar indicador de "digitando"
+        await this.sock.sendPresenceUpdate('paused', fromNumber);
+        
+        // Enviar resposta baseada na transcrição
+        await this.sendMessage(fromNumber, response);
+        
+        logger.info(`Resposta ao áudio enviada para ${senderName}: "${response.substring(0, 100)}..."`);
+        
+      } catch (error) {
+        // Parar indicadores
+        await this.sock.sendPresenceUpdate('paused', fromNumber);
+        
+        let errorMessage = 'Desculpe, não consegui processar seu áudio. ';
+        
+        if (error.message.includes('muito grande')) {
+          errorMessage += 'O arquivo é muito grande.';
+        } else if (error.message.includes('muito longo')) {
+          errorMessage += 'O áudio é muito longo (máximo 30 segundos).';
+        } else if (error.message.includes('formato')) {
+          errorMessage += 'Formato de áudio não suportado.';
+        } else if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+          errorMessage += 'Tempo esgotado. Tente com um áudio mais curto.';
+        } else {
+          errorMessage += 'Tente novamente ou envie uma mensagem de texto.';
+        }
+        
+        await this.sendMessage(fromNumber, errorMessage);
+        
+        logger.error(`Erro ao processar áudio de ${senderName}:`, error.message);
+      }
+      
+    } catch (error) {
+      await this.sock.sendPresenceUpdate('paused', fromNumber);
+      logger.error('Erro geral no processamento de áudio:', error.message);
     }
   }
 
@@ -180,6 +280,16 @@ class WhatsAppBot {
   async start() {
     try {
       await this.initialize();
+      
+      // Configurar limpeza automática de arquivos temporários (a cada 30 minutos)
+      setInterval(() => {
+        this.audioService.cleanupOldTempFiles().catch(error => {
+          logger.warn('Erro na limpeza automática de arquivos temporários:', error.message);
+        });
+      }, 30 * 60 * 1000); // 30 minutos
+      
+      logger.info('Limpeza automática de arquivos temporários configurada (30 min)');
+      
     } catch (error) {
       logger.error('Falha ao iniciar bot:', error.message);
       process.exit(1);

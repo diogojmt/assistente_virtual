@@ -1,0 +1,215 @@
+const axios = require('axios');
+const fs = require('fs-extra');
+const path = require('path');
+const ffmpeg = require('fluent-ffmpeg');
+const FormData = require('form-data');
+const logger = require('./logger');
+
+class AudioTranscriptionService {
+  constructor() {
+    this.apiKey = process.env.OPENAI_API_KEY;
+    this.baseURL = 'https://api.openai.com/v1';
+    this.tempDir = path.join(__dirname, '..', 'temp');
+    
+    if (!this.apiKey) {
+      throw new Error('OPENAI_API_KEY deve estar definida no arquivo .env');
+    }
+    
+    // Criar diretório temporário se não existir
+    this.initTempDirectory();
+  }
+
+  async initTempDirectory() {
+    try {
+      await fs.ensureDir(this.tempDir);
+      logger.info('Diretório temporário criado/verificado:', this.tempDir);
+    } catch (error) {
+      logger.error('Erro ao criar diretório temporário:', error.message);
+    }
+  }
+
+  /**
+   * Converte arquivo de áudio OGG para MP3 usando FFmpeg
+   * @param {string} inputPath - Caminho do arquivo OGG
+   * @param {string} outputPath - Caminho do arquivo MP3 de saída
+   * @returns {Promise<boolean>} - true se conversão foi bem-sucedida
+   */
+  async convertOggToMp3(inputPath, outputPath) {
+    return new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .audioCodec('mp3')
+        .audioChannels(1) // Mono para reduzir tamanho
+        .audioFrequency(16000) // 16kHz é suficiente para voz
+        .audioBitrate('64k') // Bitrate baixo para voz
+        .output(outputPath)
+        .on('end', () => {
+          logger.info('Conversão de áudio concluída:', outputPath);
+          resolve(true);
+        })
+        .on('error', (error) => {
+          logger.error('Erro na conversão de áudio:', error.message);
+          reject(error);
+        })
+        .run();
+    });
+  }
+
+  /**
+   * Transcreve arquivo de áudio usando OpenAI Whisper
+   * @param {string} audioFilePath - Caminho do arquivo de áudio MP3
+   * @returns {Promise<string>} - Texto transcrito
+   */
+  async transcribeAudio(audioFilePath) {
+    try {
+      // Verificar se arquivo existe
+      if (!await fs.pathExists(audioFilePath)) {
+        throw new Error('Arquivo de áudio não encontrado');
+      }
+
+      // Verificar tamanho do arquivo (limite de 25MB da OpenAI)
+      const stats = await fs.stat(audioFilePath);
+      const fileSizeMB = stats.size / (1024 * 1024);
+      
+      if (fileSizeMB > 25) {
+        throw new Error(`Arquivo muito grande (${fileSizeMB.toFixed(2)}MB). Limite: 25MB`);
+      }
+
+      logger.info(`Iniciando transcrição de áudio (${fileSizeMB.toFixed(2)}MB)`);
+
+      // Criar FormData para upload
+      const formData = new FormData();
+      formData.append('file', fs.createReadStream(audioFilePath));
+      formData.append('model', 'whisper-1');
+      formData.append('language', 'pt'); // Português
+      formData.append('response_format', 'text');
+
+      // Fazer requisição para API da OpenAI
+      const response = await axios.post(
+        `${this.baseURL}/audio/transcriptions`,
+        formData,
+        {
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            ...formData.getHeaders()
+          },
+          timeout: 60000, // 60 segundos timeout
+        }
+      );
+
+      const transcription = response.data.trim();
+      logger.info('Transcrição concluída:', transcription.substring(0, 100) + '...');
+      
+      return transcription;
+    } catch (error) {
+      logger.error('Erro na transcrição:', error.message);
+      
+      if (error.response?.status === 400) {
+        throw new Error('Formato de áudio não suportado ou arquivo corrompido');
+      } else if (error.response?.status === 413) {
+        throw new Error('Arquivo muito grande. Limite: 25MB');
+      } else if (error.code === 'ECONNABORTED') {
+        throw new Error('Timeout na transcrição. Tente com um áudio menor');
+      }
+      
+      throw new Error(`Erro na transcrição: ${error.message}`);
+    }
+  }
+
+  /**
+   * Processa arquivo de áudio completo: download, conversão e transcrição
+   * @param {Buffer} audioBuffer - Buffer do arquivo de áudio
+   * @param {string} originalFilename - Nome original do arquivo
+   * @param {number} maxDurationSeconds - Duração máxima permitida em segundos
+   * @returns {Promise<string>} - Texto transcrito
+   */
+  async processAudio(audioBuffer, originalFilename = 'audio', maxDurationSeconds = 30) {
+    const timestamp = Date.now();
+    const oggPath = path.join(this.tempDir, `${timestamp}_${originalFilename}.ogg`);
+    const mp3Path = path.join(this.tempDir, `${timestamp}_${originalFilename}.mp3`);
+
+    try {
+      // Salvar buffer como arquivo OGG temporário
+      await fs.writeFile(oggPath, audioBuffer);
+      logger.info('Arquivo de áudio salvo temporariamente:', oggPath);
+
+      // Verificar duração do áudio antes de converter
+      const duration = await this.getAudioDuration(oggPath);
+      if (duration > maxDurationSeconds) {
+        throw new Error(`Áudio muito longo (${duration}s). Limite: ${maxDurationSeconds}s`);
+      }
+
+      // Converter OGG para MP3
+      await this.convertOggToMp3(oggPath, mp3Path);
+
+      // Transcrever áudio
+      const transcription = await this.transcribeAudio(mp3Path);
+
+      return transcription;
+    } catch (error) {
+      logger.error('Erro no processamento de áudio:', error.message);
+      throw error;
+    } finally {
+      // Limpar arquivos temporários
+      await this.cleanupTempFiles([oggPath, mp3Path]);
+    }
+  }
+
+  /**
+   * Obtém duração do áudio em segundos
+   * @param {string} audioPath - Caminho do arquivo de áudio
+   * @returns {Promise<number>} - Duração em segundos
+   */
+  async getAudioDuration(audioPath) {
+    return new Promise((resolve, reject) => {
+      ffmpeg.ffprobe(audioPath, (error, metadata) => {
+        if (error) {
+          reject(error);
+        } else {
+          const duration = metadata.format.duration;
+          resolve(Math.round(duration));
+        }
+      });
+    });
+  }
+
+  /**
+   * Remove arquivos temporários
+   * @param {string[]} filePaths - Array de caminhos dos arquivos para remover
+   */
+  async cleanupTempFiles(filePaths) {
+    for (const filePath of filePaths) {
+      try {
+        if (await fs.pathExists(filePath)) {
+          await fs.remove(filePath);
+          logger.info('Arquivo temporário removido:', filePath);
+        }
+      } catch (error) {
+        logger.warn('Erro ao remover arquivo temporário:', filePath, error.message);
+      }
+    }
+  }
+
+  /**
+   * Limpa arquivos temporários antigos (mais de 1 hora)
+   */
+  async cleanupOldTempFiles() {
+    try {
+      const files = await fs.readdir(this.tempDir);
+      const oneHourAgo = Date.now() - (60 * 60 * 1000);
+
+      for (const file of files) {
+        const filePath = path.join(this.tempDir, file);
+        const stats = await fs.stat(filePath);
+        
+        if (stats.mtime.getTime() < oneHourAgo) {
+          await fs.remove(filePath);
+          logger.info('Arquivo temporário antigo removido:', filePath);
+        }
+      }
+    } catch (error) {
+      logger.warn('Erro na limpeza de arquivos temporários antigos:', error.message);
+    }
+  }
+}
+
+module.exports = AudioTranscriptionService;
