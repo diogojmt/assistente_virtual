@@ -6,6 +6,7 @@ Bot inteligente para WhatsApp que integra com OpenAI Assistants API e oferece co
 
 - 🤖 **Integração completa com OpenAI Assistants API**
 - 📱 **Bot WhatsApp usando Baileys**
+- 🎤 **Transcrição de áudios** via OpenAI Whisper
 - 🏛️ **Consulta de pertences municipais via WebService SOAP**
 - 💰 **Consulta de débitos municipais** (IPTU, ISS, taxas)
 - 🧠 **Sistema conversacional inteligente** com gerenciamento de estados
@@ -20,6 +21,7 @@ Bot inteligente para WhatsApp que integra com OpenAI Assistants API e oferece co
 ## 📋 Pré-requisitos
 
 - Node.js 22.17.0+ 
+- **FFmpeg** (para transcrição de áudios)
 - Conta OpenAI com API key
 - Assistant criado na plataforma OpenAI (com funções configuradas)
 - WhatsApp Business (recomendado)
@@ -90,11 +92,12 @@ npm start
 
 2. Escaneie o QR Code que aparece no terminal com seu WhatsApp
 
-3. Envie mensagens como:
+3. Envie mensagens (texto ou áudio) como:
    - "Quero ver meus débitos"
    - "Débitos do imóvel 123456"
    - "Vínculos do CPF 12345678901"
    - "Minha empresa tem débito?"
+   - 🎤 Áudios de até 30 segundos
 
 4. O bot processará a solicitação e fornecerá respostas formatadas
 
@@ -158,15 +161,44 @@ Funcionalidade para consulta de vínculos municipais:
 
 ## 🌐 Deploy no Replit
 
-1. Importe o projeto no Replit
-2. Configure as variáveis de ambiente:
+### Configuração Automática
+
+O projeto inclui configuração automática para Replit com FFmpeg:
+
+1. **Importe o projeto** no Replit
+2. **Configure as variáveis de ambiente** (Secrets):
    - `OPENAI_API_KEY`
    - `OPENAI_ASSISTANT_ID`
    - `ABACO_API_KEY`
-3. Execute `npm install`
-4. Configure as funções no OpenAI Assistant (veja ASSISTANT_FUNCTIONS.md)
-5. Execute `npm start`
-6. Mantenha o Replit sempre ativo (Always On)
+3. **Reconstrua o ambiente**: Execute "Reload Environment" no shell
+4. **Teste o FFmpeg**: Execute `node test-ffmpeg.js`
+5. **Configure as funções** no OpenAI Assistant (veja ASSISTANT_FUNCTIONS.md)
+6. **Execute o bot**: `npm start`
+7. **Mantenha ativo**: Configure Always On
+
+### Arquivos de Configuração Replit
+
+- `replit.nix` - Dependências do sistema (Node.js, FFmpeg)
+- `.replit` - Configuração de execução e portas
+- `test-ffmpeg.js` - Script de teste de FFmpeg
+
+### Verificação da Instalação
+
+Execute no shell do Replit:
+```bash
+# Verificar FFmpeg
+ffmpeg -version
+
+# Testar configuração completa
+node test-ffmpeg.js
+```
+
+### ⚠️ Importante para Replit
+
+- O **FFmpeg é essencial** para transcrição de áudios
+- Use "Reload Environment" após modificar `replit.nix`
+- Verifique os logs de inicialização para confirmar FFmpeg
+- Configure Always On para funcionamento contínuo
 
 ## 📊 Logs e monitoramento
 
@@ -198,6 +230,9 @@ O bot inclui tratamento robusto para:
 - **axios**: Cliente HTTP para requisições
 - **dotenv**: Gerenciamento de variáveis de ambiente
 - **express**: Framework web para endpoints
+- **fluent-ffmpeg**: Conversão de áudio (OGG → MP3)
+- **form-data**: Upload de arquivos para OpenAI
+- **fs-extra**: Operações de sistema de arquivos
 - **pino**: Sistema de logging estruturado
 - **pino-pretty**: Formatação de logs
 - **qrcode-terminal**: Exibição de QR Code no terminal
@@ -205,13 +240,14 @@ O bot inclui tratamento robusto para:
 
 ## 🚨 Limitações
 
-- **Contexto por mensagem** (não mantém histórico longo)
-- **Suporte apenas para mensagens de texto**
+- **Contexto por usuário** mantido durante a sessão
+- **Suporte para texto e áudio** (máximo 30 segundos)
 - **Rate limits** da OpenAI aplicam-se
 - **Consulta de pertences** limitada ao ambiente configurado
 - **Consulta de débitos** limitada ao exercício configurado
 - **Máximo de 5 débitos** detalhados por consulta
 - **Máximo de 10 imóveis/empresas** por listagem
+- **FFmpeg obrigatório** para transcrição de áudios
 
 ## 🤝 Contribuição
 

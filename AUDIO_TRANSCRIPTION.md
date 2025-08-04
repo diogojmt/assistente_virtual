@@ -66,6 +66,7 @@ O assistente virtual agora suporta transcrição automática de mensagens de voz
 ## Tratamento de Erros
 
 ### Mensagens de Erro Específicas
+- **FFmpeg não instalado:** "⚠️ Sistema de transcrição indisponível. O FFmpeg não está instalado no servidor. Por favor, envie sua mensagem em texto."
 - **Áudio muito longo:** "⚠️ Áudio muito longo. Por favor, envie um áudio de até 30 segundos."
 - **Arquivo muito grande:** "Arquivo muito grande."
 - **Formato não suportado:** "Formato de áudio não suportado."
@@ -104,10 +105,14 @@ temp/
 
 ## Requisitos do Sistema
 
-### FFmpeg
+### FFmpeg (OBRIGATÓRIO)
 - **Necessário:** FFmpeg deve estar instalado no sistema
-- **Windows:** Baixar de https://ffmpeg.org/download.html
-- **Linux/Mac:** `apt install ffmpeg` ou `brew install ffmpeg`
+- **Status:** Verificação automática na inicialização
+- **Instalação:**
+  - **Windows:** Ver [`install-ffmpeg-windows.md`](install-ffmpeg-windows.md)
+  - **Linux:** `sudo apt install ffmpeg`
+  - **macOS:** `brew install ffmpeg`
+- **Verificação:** Execute `ffmpeg -version` no terminal
 
 ### Variáveis de Ambiente
 - `OPENAI_API_KEY`: Mesma chave já utilizada pelo assistente

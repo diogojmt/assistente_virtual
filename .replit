@@ -1,0 +1,38 @@
+# Configuração do Replit para WhatsApp Bot
+
+# Comando para executar o projeto
+run = "npm start"
+
+# Comando para instalar dependências
+entrypoint = "index.js"
+
+# Configurações do ambiente
+[env]
+NODE_ENV = "production"
+
+# Configuração de linguagem
+[languages]
+
+[languages.javascript]
+pattern = "**/{*.js,*.jsx,*.ts,*.tsx,*.json}"
+
+[languages.javascript.languageServer]
+start = "typescript-language-server --stdio"
+
+# Configuração do Nix
+[nix]
+channel = "stable-23.05"
+
+# Configuração de deploys (opcional)
+[deployment]
+run = ["sh", "-c", "npm start"]
+
+# Configuração de portas
+[[ports]]
+localPort = 3000
+externalPort = 80
+
+# Configuração de secrets (variáveis de ambiente)
+[secrets]
+OPENAI_API_KEY = ""
+OPENAI_ASSISTANT_ID = ""

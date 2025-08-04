@@ -243,7 +243,11 @@ class WhatsAppBot {
         
         let errorMessage = 'Desculpe, não consegui processar seu áudio. ';
         
-        if (error.message.includes('muito grande')) {
+        if (error.message.includes('FFmpeg')) {
+          errorMessage = '⚠️ Sistema de transcrição indisponível.\n\n' +
+                        'O FFmpeg não está instalado no servidor.\n' +
+                        'Por favor, envie sua mensagem em texto.';
+        } else if (error.message.includes('muito grande')) {
           errorMessage += 'O arquivo é muito grande.';
         } else if (error.message.includes('muito longo')) {
           errorMessage += 'O áudio é muito longo (máximo 30 segundos).';

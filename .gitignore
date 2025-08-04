@@ -35,6 +35,4 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Replit specific
-.replit
-replit.nix
+# Replit specific files are now included for automatic setup

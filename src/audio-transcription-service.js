@@ -10,6 +10,7 @@ class AudioTranscriptionService {
     this.apiKey = process.env.OPENAI_API_KEY;
     this.baseURL = 'https://api.openai.com/v1';
     this.tempDir = path.join(__dirname, '..', 'temp');
+    this.ffmpegAvailable = false;
     
     if (!this.apiKey) {
       throw new Error('OPENAI_API_KEY deve estar definida no arquivo .env');
@@ -17,6 +18,39 @@ class AudioTranscriptionService {
     
     // Criar diretório temporário se não existir
     this.initTempDirectory();
+    
+    // Verificar disponibilidade do FFmpeg
+    this.checkFFmpegAvailability();
+  }
+
+  /**
+   * Verifica se FFmpeg está disponível no sistema
+   */
+  async checkFFmpegAvailability() {
+    try {
+      await new Promise((resolve, reject) => {
+        ffmpeg.ffprobe(__filename, (error) => {
+          // Se der erro de arquivo não encontrado, mas o FFmpeg responder, está OK
+          if (error && error.message.includes('Invalid data found when processing input')) {
+            resolve(true);
+          } else if (error && (error.message.includes('spawn') && error.message.includes('ENOENT'))) {
+            reject(new Error('FFmpeg não encontrado'));
+          } else {
+            resolve(true);
+          }
+        });
+      });
+      
+      this.ffmpegAvailable = true;
+      logger.info('FFmpeg disponível no sistema');
+    } catch (error) {
+      this.ffmpegAvailable = false;
+      logger.warn('FFmpeg não encontrado no sistema. Transcrição de áudios não funcionará.');
+      logger.warn('Para usar transcrição de áudios, instale o FFmpeg:');
+      logger.warn('- Windows: https://ffmpeg.org/download.html');
+      logger.warn('- Linux: sudo apt install ffmpeg');
+      logger.warn('- macOS: brew install ffmpeg');
+    }
   }
 
   async initTempDirectory() {
@@ -36,7 +70,8 @@ class AudioTranscriptionService {
    */
   async convertOggToMp3(inputPath, outputPath) {
     return new Promise((resolve, reject) => {
-      ffmpeg(inputPath)
+      // Verificar se FFmpeg está disponível
+      const command = ffmpeg(inputPath)
         .audioCodec('mp3')
         .audioChannels(1) // Mono para reduzir tamanho
         .audioFrequency(16000) // 16kHz é suficiente para voz
@@ -48,9 +83,17 @@ class AudioTranscriptionService {
         })
         .on('error', (error) => {
           logger.error('Erro na conversão de áudio:', error.message);
-          reject(error);
-        })
-        .run();
+          
+          // Verificar se é erro de FFmpeg não encontrado
+          if (error.message.includes('spawn') && error.message.includes('ENOENT')) {
+            reject(new Error('FFmpeg não encontrado no sistema. Instale o FFmpeg para usar a transcrição de áudios.'));
+          } else {
+            reject(error);
+          }
+        });
+
+      // Configurar timeout para conversão
+      command.run();
     });
   }
 
@@ -123,6 +166,11 @@ class AudioTranscriptionService {
    * @returns {Promise<string>} - Texto transcrito
    */
   async processAudio(audioBuffer, originalFilename = 'audio', maxDurationSeconds = 30) {
+    // Verificar se FFmpeg está disponível
+    if (!this.ffmpegAvailable) {
+      throw new Error('FFmpeg não está disponível no sistema. Instale o FFmpeg para usar transcrição de áudios.');
+    }
+
     const timestamp = Date.now();
     const oggPath = path.join(this.tempDir, `${timestamp}_${originalFilename}.ogg`);
     const mp3Path = path.join(this.tempDir, `${timestamp}_${originalFilename}.mp3`);
