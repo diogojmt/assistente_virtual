@@ -35,6 +35,9 @@ class AudioTranscriptionService {
             resolve(true);
           } else if (error && (error.message.includes('spawn') && error.message.includes('ENOENT'))) {
             reject(new Error('FFmpeg não encontrado'));
+          } else if (error) {
+            logger.debug('FFmpeg probe error:', error.message);
+            reject(new Error('FFmpeg não encontrado'));
           } else {
             resolve(true);
           }
@@ -47,9 +50,11 @@ class AudioTranscriptionService {
       this.ffmpegAvailable = false;
       logger.warn('FFmpeg não encontrado no sistema. Transcrição de áudios não funcionará.');
       logger.warn('Para usar transcrição de áudios, instale o FFmpeg:');
-      logger.warn('- Windows: https://ffmpeg.org/download.html');
+      logger.warn('- Windows: Baixe de https://github.com/BtbN/FFmpeg-Builds/releases');
+      logger.warn('- Extraia para C:\\ffmpeg e adicione C:\\ffmpeg\\bin ao PATH');
       logger.warn('- Linux: sudo apt install ffmpeg');
       logger.warn('- macOS: brew install ffmpeg');
+      logger.warn('Consulte install-ffmpeg-windows.md para instruções detalhadas');
     }
   }
 
@@ -72,27 +77,42 @@ class AudioTranscriptionService {
     return new Promise((resolve, reject) => {
       // Verificar se FFmpeg está disponível
       const command = ffmpeg(inputPath)
-        .audioCodec('mp3')
+        .audioCodec('libmp3lame')
         .audioChannels(1) // Mono para reduzir tamanho
         .audioFrequency(16000) // 16kHz é suficiente para voz
         .audioBitrate('64k') // Bitrate baixo para voz
+        .format('mp3')
         .output(outputPath)
+        .on('start', (commandLine) => {
+          logger.info('FFmpeg iniciado:', commandLine);
+        })
+        .on('stderr', (stderrLine) => {
+          logger.debug('FFmpeg stderr:', stderrLine);
+        })
         .on('end', () => {
           logger.info('Conversão de áudio concluída:', outputPath);
           resolve(true);
         })
         .on('error', (error) => {
           logger.error('Erro na conversão de áudio:', error.message);
+          logger.error('FFmpeg error stack:', error.stack);
           
           // Verificar se é erro de FFmpeg não encontrado
           if (error.message.includes('spawn') && error.message.includes('ENOENT')) {
             reject(new Error('FFmpeg não encontrado no sistema. Instale o FFmpeg para usar a transcrição de áudios.'));
+          } else if (error.message.includes('codec') || error.message.includes('libmp3lame')) {
+            reject(new Error('Codec MP3 não disponível no FFmpeg. Verifique a instalação do FFmpeg.'));
           } else {
             reject(error);
           }
         });
 
       // Configurar timeout para conversão
+      setTimeout(() => {
+        command.kill('SIGKILL');
+        reject(new Error('Timeout na conversão de áudio'));
+      }, 30000); // 30 segundos de timeout
+      
       command.run();
     });
   }
