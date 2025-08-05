@@ -9,12 +9,14 @@ const qrcode = require('qrcode-terminal');
 const logger = require('./logger');
 const OpenAIService = require('./openai-service');
 const AudioTranscriptionService = require('./audio-transcription-service');
+const TextNormalizer = require('./text-normalizer');
 
 class WhatsAppBot {
   constructor() {
     this.sock = null;
     this.openaiService = new OpenAIService();
     this.audioService = new AudioTranscriptionService();
+    this.textNormalizer = new TextNormalizer();
   }
 
   async initialize() {
@@ -158,8 +160,11 @@ class WhatsAppBot {
       // Enviar indicador de "digitando"
       await this.sock.sendPresenceUpdate('composing', fromNumber);
       
+      // Normalizar texto (limpar números com caracteres especiais)
+      const normalizedText = this.textNormalizer.normalizeText(messageText);
+      
       // Processar SEMPRE com OpenAI Assistant (principal) - mantendo contexto por usuário
-      const response = await this.openaiService.processMessage(messageText, fromNumber);
+      const response = await this.openaiService.processMessage(normalizedText, fromNumber);
       
       // Parar indicador de "digitando"
       await this.sock.sendPresenceUpdate('paused', fromNumber);
@@ -221,13 +226,18 @@ class WhatsAppBot {
         
         logger.info(`Transcrição concluída: "${transcription}"`);
         
-        // Enviar confirmação da transcrição
-        const confirmationMessage = `🎤 Transcrevi seu áudio: "${transcription}"`;
+        // Normalizar texto transcrito (limpar números com caracteres especiais)
+        const normalizedTranscription = this.textNormalizer.normalizeText(transcription);
+        
+        // Enviar confirmação da transcrição (mostra versão normalizada se houver diferença)
+        const confirmationMessage = normalizedTranscription !== transcription 
+          ? `🎤 Transcrevi seu áudio: "${transcription}"\n✅ Texto normalizado: "${normalizedTranscription}"`
+          : `🎤 Transcrevi seu áudio: "${transcription}"`;
         await this.sendMessage(fromNumber, confirmationMessage);
         
-        // Processar o texto transcrito como uma mensagem normal
-        logger.info('Processando texto transcrito...');
-        const response = await this.openaiService.processMessage(transcription, fromNumber);
+        // Processar o texto transcrito normalizado como uma mensagem normal
+        logger.info('Processando texto transcrito normalizado...');
+        const response = await this.openaiService.processMessage(normalizedTranscription, fromNumber);
         
         // Parar indicador de "digitando"
         await this.sock.sendPresenceUpdate('paused', fromNumber);
