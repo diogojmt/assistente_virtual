@@ -235,6 +235,9 @@ class WhatsAppBot {
           : `🎤 Transcrevi seu áudio: "${transcription}"`;
         await this.sendMessage(fromNumber, confirmationMessage);
         
+        // Enviar mensagem de processamento para dar feedback ao usuário
+        await this.sendMessage(fromNumber, "🤖 Processando sua consulta...");
+        
         // Processar o texto transcrito normalizado como uma mensagem normal
         logger.info('Processando texto transcrito normalizado...');
         const response = await this.openaiService.processMessage(normalizedTranscription, fromNumber);
