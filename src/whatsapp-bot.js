@@ -22,6 +22,7 @@ class WhatsAppBot {
     this.pendingAudioRequests = new Map(); // Armazena solicitações de áudio pendentes
     this.audioPreferences = new Map(); // Armazena preferências de áudio por usuário
     this.lastUserMessages = new Map(); // Armazena últimas mensagens para contexto emocional
+    this.lastResponses = new Map(); // Armazena últimas respostas enviadas para conversão em áudio
     this.firstTimeUsers = new Set(); // Controla primeira interação dos usuários
   }
 
@@ -311,14 +312,7 @@ class WhatsAppBot {
         const normalizedTranscription =
           this.textNormalizer.normalizeText(transcription);
 
-        // Enviar confirmação da transcrição (mostra versão normalizada se houver diferença)
-        const confirmationMessage =
-          normalizedTranscription !== transcription
-            ? `🎤 Transcrevi seu áudio: "${transcription}"\n✅ Texto normalizado: "${normalizedTranscription}"`
-            : `🎤 Transcrevi seu áudio: "${transcription}"`;
-        await this.sendMessage(fromNumber, confirmationMessage);
-
-        // Enviar mensagem de processamento para dar feedback ao usuário
+        // Enviar apenas mensagem de processamento para feedback mais natural
         await this.sendMessage(
           fromNumber,
           "🤖 Processando sua consulta, aguarde uns instantes..."
@@ -454,12 +448,55 @@ class WhatsAppBot {
       const pendingResponse = this.pendingAudioRequests.get(fromNumber);
 
       if (!pendingResponse) {
-        // Se não há resposta pendente, mas usuário solicitou áudio, 
-        // interpretar como preferência para próximas respostas
+        // Verificar se há uma resposta anterior para converter em áudio
+        const lastResponse = this.lastResponses.get(fromNumber);
+        
+        if (lastResponse && (Date.now() - lastResponse.timestamp) < (5 * 60 * 1000)) { // 5 minutos
+          // Converter resposta anterior em áudio
+          logger.info(`🔄 Convertendo resposta anterior em áudio para ${senderName}`);
+          
+          // Enviar indicador de "gravando áudio"
+          await this.sock.sendPresenceUpdate("recording", fromNumber);
+          
+          try {
+            // Gerar áudio da resposta anterior
+            const audioFilePath = await this.ttsService.generateAudio(
+              lastResponse.text,
+              "nova",
+              "mp3"
+            );
+            
+            // Enviar áudio via WhatsApp
+            await this.sendAudioMessage(fromNumber, audioFilePath);
+            
+            // Limpeza do arquivo após envio
+            setTimeout(() => {
+              this.ttsService.removeFile(audioFilePath).catch(error => {
+                logger.warn('Erro ao limpar arquivo TTS:', error.message);
+              });
+            }, 60000); // 1 minuto
+            
+            // Ativar preferência de áudio para próximas respostas
+            this.audioPreferences.set(fromNumber, {
+              preferAudio: true,
+              timestamp: Date.now(),
+              lastMessage: ""
+            });
+            
+            return;
+            
+          } catch (audioError) {
+            logger.error('Erro ao gerar áudio da resposta anterior:', audioError.message);
+            await this.sendMessage(fromNumber, "❌ Erro ao gerar áudio. Desculpe, não consegui converter a resposta anterior em áudio.");
+            return;
+          }
+        }
+        
+        // Se não há resposta anterior recente, ativar preferência para próximas respostas
         this.audioPreferences.set(fromNumber, {
           preferAudio: true,
           timestamp: Date.now(),
-          lastMessage: "" // Para contexto emocional
+          lastMessage: ""
         });
         
         await this.sendMessage(
@@ -844,6 +881,12 @@ class WhatsAppBot {
     try {
       // Enviar a resposta principal
       await this.sendMessage(fromNumber, responseText);
+      
+      // Armazenar a resposta para possível conversão em áudio posterior
+      this.lastResponses.set(fromNumber, {
+        text: responseText,
+        timestamp: Date.now()
+      });
 
       // Verificar se o texto contém links
       const linkAnalysis = this.processTextForAudio(responseText);
@@ -1097,6 +1140,14 @@ class WhatsAppBot {
     for (const [userId, data] of this.audioPreferences.entries()) {
       if (now - data.timestamp > prefMaxAge) {
         this.audioPreferences.delete(userId);
+      }
+    }
+    
+    // Limpar respostas antigas (mais de 5 minutos)
+    const responseMaxAge = 5 * 60 * 1000; // 5 minutos
+    for (const [userId, data] of this.lastResponses.entries()) {
+      if (now - data.timestamp > responseMaxAge) {
+        this.lastResponses.delete(userId);
       }
     }
   }
