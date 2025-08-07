@@ -9,6 +9,7 @@ const qrcode = require('qrcode-terminal');
 const logger = require('./logger');
 const OpenAIService = require('./openai-service');
 const AudioTranscriptionService = require('./audio-transcription-service');
+const TextToSpeechService = require('./text-to-speech-service');
 const TextNormalizer = require('./text-normalizer');
 
 class WhatsAppBot {
@@ -16,7 +17,9 @@ class WhatsAppBot {
     this.sock = null;
     this.openaiService = new OpenAIService();
     this.audioService = new AudioTranscriptionService();
+    this.ttsService = new TextToSpeechService();
     this.textNormalizer = new TextNormalizer();
+    this.pendingAudioRequests = new Map(); // Armazena solicitações de áudio pendentes
   }
 
   async initialize() {
@@ -157,6 +160,12 @@ class WhatsAppBot {
 
   async processTextMessage(messageText, fromNumber, senderName) {
     try {
+      // Verificar se é uma solicitação de áudio
+      if (this.isAudioRequest(messageText)) {
+        await this.handleAudioRequest(fromNumber, senderName);
+        return;
+      }
+
       // Enviar indicador de "digitando"
       await this.sock.sendPresenceUpdate('composing', fromNumber);
       
@@ -169,8 +178,8 @@ class WhatsAppBot {
       // Parar indicador de "digitando"
       await this.sock.sendPresenceUpdate('paused', fromNumber);
       
-      // Enviar resposta
-      await this.sendMessage(fromNumber, response);
+      // Enviar resposta com pergunta sobre áudio
+      await this.sendMessageWithAudioPrompt(fromNumber, response);
       
       logger.info(`Resposta enviada para ${senderName}: "${response.substring(0, 100)}..."`);
       
@@ -245,8 +254,8 @@ class WhatsAppBot {
         // Parar indicador de "digitando"
         await this.sock.sendPresenceUpdate('paused', fromNumber);
         
-        // Enviar resposta baseada na transcrição
-        await this.sendMessage(fromNumber, response);
+        // Enviar resposta baseada na transcrição com pergunta sobre áudio
+        await this.sendMessageWithAudioPrompt(fromNumber, response);
         
         logger.info(`Resposta ao áudio enviada para ${senderName}: "${response.substring(0, 100)}..."`);
         
@@ -285,6 +294,164 @@ class WhatsAppBot {
 
 
 
+  /**
+   * Verifica se a mensagem é uma solicitação de áudio
+   */
+  isAudioRequest(messageText) {
+    const text = messageText.toLowerCase().trim();
+    
+    // Palavras que indicam solicitação de áudio
+    const audioKeywords = ['audio', 'áudio', 'som', 'escutar', 'ouvir', 'falar'];
+    
+    // Emojis relacionados a áudio
+    const audioEmojis = ['🎧', '🔊', '🔉', '🔇', '📢', '📣', '🎵', '🎶', '🎙️', '📻'];
+    
+    // Verificar palavras-chave
+    if (audioKeywords.some(keyword => text.includes(keyword))) {
+      return true;
+    }
+    
+    // Verificar emojis
+    if (audioEmojis.some(emoji => messageText.includes(emoji))) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Processa solicitação de áudio do usuário
+   */
+  async handleAudioRequest(fromNumber, senderName) {
+    try {
+      // Verificar se há uma resposta pendente para gerar áudio
+      const pendingResponse = this.pendingAudioRequests.get(fromNumber);
+      
+      if (!pendingResponse) {
+        await this.sendMessage(fromNumber, 'Não há nenhuma resposta recente para converter em áudio. Faça uma pergunta primeiro.');
+        return;
+      }
+      
+      logger.info(`Processando solicitação de áudio de ${senderName}`);
+      
+      // Enviar indicador de "gravando áudio"
+      await this.sock.sendPresenceUpdate('recording', fromNumber);
+      
+      try {
+        // Gerar áudio usando TTS
+        const audioFilePath = await this.ttsService.generateAudio(pendingResponse.text, 'nova', 'opus');
+        
+        // Enviar áudio via WhatsApp
+        await this.sendAudioMessage(fromNumber, audioFilePath);
+        
+        // Remover da lista de pendentes após envio bem-sucedido
+        this.pendingAudioRequests.delete(fromNumber);
+        
+        // Limpeza do arquivo temporário após um tempo
+        setTimeout(() => {
+          this.ttsService.removeFile(audioFilePath).catch(error => {
+            logger.warn('Erro ao limpar arquivo TTS:', error.message);
+          });
+        }, 60000); // 1 minuto
+        
+        logger.info(`Áudio TTS enviado com sucesso para ${senderName}`);
+        
+      } catch (error) {
+        logger.error(`Erro ao gerar/enviar áudio para ${senderName}:`, error.message);
+        
+        let errorMessage = '❌ Não foi possível gerar o áudio. ';
+        
+        if (error.message.includes('muito longo')) {
+          errorMessage += 'A resposta é muito longa para conversão em áudio.';
+        } else if (error.message.includes('rate')) {
+          errorMessage += 'Limite de uso da API excedido. Tente novamente em alguns minutos.';
+        } else if (error.message.includes('timeout')) {
+          errorMessage += 'Timeout na geração. Tente novamente.';
+        } else {
+          errorMessage += 'Tente novamente em alguns instantes.';
+        }
+        
+        await this.sendMessage(fromNumber, errorMessage);
+      } finally {
+        // Parar indicador de "gravando áudio"
+        await this.sock.sendPresenceUpdate('paused', fromNumber);
+      }
+      
+    } catch (error) {
+      await this.sock.sendPresenceUpdate('paused', fromNumber);
+      logger.error('Erro geral no processamento de solicitação de áudio:', error.message);
+    }
+  }
+
+  /**
+   * Envia resposta de texto com pergunta sobre áudio
+   */
+  async sendMessageWithAudioPrompt(fromNumber, responseText) {
+    try {
+      // Enviar a resposta principal
+      await this.sendMessage(fromNumber, responseText);
+      
+      // Armazenar resposta para possível conversão em áudio
+      this.pendingAudioRequests.set(fromNumber, {
+        text: responseText,
+        timestamp: Date.now()
+      });
+      
+      // Limpar solicitações antigas (mais de 10 minutos)
+      this.cleanupPendingAudioRequests();
+      
+      // Enviar pergunta sobre áudio
+      const audioPrompt = "\n🎧 Deseja ouvir essa resposta em áudio? Responda com 'áudio' ou envie um emoji de fone 🎧.";
+      await this.sendMessage(fromNumber, audioPrompt);
+      
+    } catch (error) {
+      logger.error('Erro ao enviar mensagem com prompt de áudio:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Envia mensagem de áudio via WhatsApp
+   */
+  async sendAudioMessage(to, audioFilePath) {
+    try {
+      const fs = require('fs-extra');
+      
+      if (!await fs.pathExists(audioFilePath)) {
+        throw new Error('Arquivo de áudio não encontrado');
+      }
+      
+      // Ler arquivo de áudio
+      const audioBuffer = await fs.readFile(audioFilePath);
+      
+      // Enviar como mensagem de voz (PTT = Push To Talk)
+      await this.sock.sendMessage(to, {
+        audio: audioBuffer,
+        mimetype: 'audio/opus',
+        ptt: true // Marca como mensagem de voz
+      });
+      
+      logger.info(`Áudio enviado: ${audioFilePath} (${audioBuffer.length} bytes)`);
+    } catch (error) {
+      logger.error('Erro ao enviar áudio:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Remove solicitações de áudio antigas
+   */
+  cleanupPendingAudioRequests() {
+    const now = Date.now();
+    const maxAge = 10 * 60 * 1000; // 10 minutos
+    
+    for (const [userId, data] of this.pendingAudioRequests.entries()) {
+      if (now - data.timestamp > maxAge) {
+        this.pendingAudioRequests.delete(userId);
+      }
+    }
+  }
+
   async sendMessage(to, text) {
     try {
       await this.sock.sendMessage(to, { text });
@@ -300,9 +467,18 @@ class WhatsAppBot {
       
       // Configurar limpeza automática de arquivos temporários (a cada 30 minutos)
       setInterval(() => {
+        // Limpeza de arquivos de transcrição
         this.audioService.cleanupOldTempFiles().catch(error => {
-          logger.warn('Erro na limpeza automática de arquivos temporários:', error.message);
+          logger.warn('Erro na limpeza automática de arquivos de transcrição:', error.message);
         });
+        
+        // Limpeza de arquivos TTS
+        this.ttsService.cleanupOldTempFiles().catch(error => {
+          logger.warn('Erro na limpeza automática de arquivos TTS:', error.message);
+        });
+        
+        // Limpeza de solicitações de áudio antigas
+        this.cleanupPendingAudioRequests();
       }, 30 * 60 * 1000); // 30 minutos
       
       logger.info('Limpeza automática de arquivos temporários configurada (30 min)');
