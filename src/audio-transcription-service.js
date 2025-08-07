@@ -165,22 +165,31 @@ class AudioTranscriptionService {
       return transcription;
     } catch (error) {
       logger.error('Erro na transcrição:', error.message);
-      logger.error('Erro completo:', error);
+      logger.error('Tipo do erro:', error.constructor.name);
+      logger.error('Código do erro:', error.code);
+      logger.error('Stack do erro:', error.stack);
       
-      if (error.response?.status === 400) {
-        logger.error('Resposta da API (400):', error.response?.data);
-        throw new Error('Formato de áudio não suportado ou arquivo corrompido');
-      } else if (error.response?.status === 413) {
-        throw new Error('Arquivo muito grande. Limite: 25MB');
+      if (error.response) {
+        logger.error('Status da resposta:', error.response.status);
+        logger.error('Dados da resposta:', JSON.stringify(error.response.data, null, 2));
+        
+        if (error.response.status === 400) {
+          throw new Error('Formato de áudio não suportado ou arquivo corrompido');
+        } else if (error.response.status === 413) {
+          throw new Error('Arquivo muito grande. Limite: 25MB');
+        } else {
+          throw new Error(`Erro da API OpenAI (${error.response.status}): ${error.response.data?.error?.message || error.message}`);
+        }
       } else if (error.code === 'ECONNABORTED') {
         throw new Error('Timeout na transcrição. Tente com um áudio menor');
-      } else if (error.response) {
-        logger.error('Status da resposta:', error.response.status);
-        logger.error('Dados da resposta:', error.response.data);
-        throw new Error(`Erro da API OpenAI (${error.response.status}): ${error.response.data?.error?.message || error.message}`);
+      } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+        throw new Error('Erro de conectividade com a API OpenAI. Verifique sua conexão de internet.');
+      } else if (error.code === 'EPROTO' || error.code === 'CERT_HAS_EXPIRED') {
+        throw new Error('Erro de certificado SSL. Verifique a data/hora do sistema.');
+      } else {
+        logger.error('Erro sem response - provavelmente rede:', error);
+        throw new Error(`Erro de rede na transcrição: ${error.message}`);
       }
-      
-      throw new Error(`Erro na transcrição: ${error.message}`);
     }
   }
 
