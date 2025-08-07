@@ -184,6 +184,87 @@ await sock.sendMessage(to, {
 - **1000 chars**: 1.1MB gerado ✅
 - **2000 chars**: 2.3MB gerado ✅ (limite Replit)
 - **3000 chars**: Rejeitado ✅ (validação funcionando)
+- **Detecção de links**: Funcionando ✅ (substitui/remove links)
+
+### 🔗 **Tratamento Inteligente de Links:**
+
+**Problema Resolvido**: Links falados ficam impraticáveis ("https colon slash slash...")
+
+**Soluções Implementadas**:
+1. **1-2 links**: Substitui por ", confira o link no texto,"
+2. **3+ links**: Não oferece áudio (muitos links)
+3. **Sem links**: Áudio normal
+
+**Exemplos**:
+```
+Texto: "Acesse https://portal.gov.br para consultas"
+Áudio: "Acesse, confira o link enviado no texto, para consultas"
+
+Texto: "Links: site1.com, site2.br, site3.gov"
+Resultado: Sem oferta de áudio (muitos links)
+```
+
+## 🤖➡️👥 **Experiência Natural - Como Falar com uma Pessoa Real**
+
+### 🎯 **Transformação Completa para Naturalidade:**
+
+#### **🔢 Números e Valores Naturais:**
+```
+🤖 ANTES: "R$ 1.250,75"
+👥 AGORA: "mil e duzentos e cinquenta reais e setenta e cinco centavos"
+
+🤖 ANTES: "15%"  
+👥 AGORA: "quinze por cento"
+```
+
+#### **📅 Datas Humanizadas:**
+```
+🤖 ANTES: "10/08/2025"
+👥 AGORA: "dez de agosto de dois mil e vinte e cinco"
+```
+
+#### **📋 Abreviações Expandidas:**
+```
+🤖 ANTES: "IPTU"
+👥 AGORA: "Imposto Predial e Territorial Urbano"
+```
+
+#### **🎭 Contexto Emocional Inteligente:**
+
+**😤 Frustração Detectada:**
+- **Usuário**: "isso não funciona, sempre dá problema"
+- **Sistema**: Usa voz `fable` (calma e tranquilizadora)
+
+**😊 Gratidão Detectada:**
+- **Usuário**: "muito obrigado, excelente"
+- **Sistema**: Usa voz `nova` (calorosa)
+
+**⚡ Urgência Detectada:**
+- **Usuário**: "preciso urgente dessa informação"
+- **Sistema**: Usa voz `alloy` (séria e profissional)
+
+#### **🎵 Melhorias na Fala:**
+- **Pausas naturais** após valores monetários
+- **Pontuação inteligente** para respiração
+- **Vírgulas estratégicas** em listas
+- **Ênfase** em informações importantes
+
+### 🔄 **Exemplo Completo da Transformação:**
+
+**🤖 VERSÃO ROBÓTICA:**
+> "Seu débito de IPTU é R$ 1.200,00 com vencimento em 10/08/2025."
+
+**👥 VERSÃO NATURAL:**
+> "Seu débito de Imposto Predial e Territorial Urbano é mil e duzentos reais, com vencimento em dez de agosto de dois mil e vinte e cinco."
+
+### ✨ **Funcionalidades Implementadas:**
+- ✅ **Conversão numérica** para fala natural
+- ✅ **Datas por extenso** em português
+- ✅ **Abreviações expandidas** contextualmente
+- ✅ **Voz adaptativa** ao estado emocional
+- ✅ **Pontuação melhorada** para pausas
+- ✅ **Tratamento de links** inteligente
+- ✅ **Preferências memorizada** (1 hora)
 
 ## 🎉 Próximos Passos
 
