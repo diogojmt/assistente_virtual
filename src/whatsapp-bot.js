@@ -179,11 +179,11 @@ class WhatsAppBot {
 
   async processTextMessage(messageText, fromNumber, senderName) {
     try {
-      // Verificar se é primeira interação do usuário
+      // Verificar se é primeira interação do usuário (apenas para tracking)
       const isFirstTime = !this.firstTimeUsers.has(fromNumber);
       if (isFirstTime) {
         this.firstTimeUsers.add(fromNumber);
-        await this.sendWelcomeMessage(fromNumber);
+        // Mensagem de boas-vindas removida para interação mais natural
       }
 
       // Verificar se é uma solicitação de áudio
@@ -254,11 +254,11 @@ class WhatsAppBot {
 
   async processAudioMessage(message, fromNumber, senderName) {
     try {
-      // Verificar se é primeira interação do usuário
+      // Verificar se é primeira interação do usuário (apenas para tracking)
       const isFirstTime = !this.firstTimeUsers.has(fromNumber);
       if (isFirstTime) {
         this.firstTimeUsers.add(fromNumber);
-        await this.sendWelcomeMessage(fromNumber);
+        // Mensagem de boas-vindas removida para interação mais natural
       }
 
       const audioMessage = message.message.audioMessage;
@@ -312,7 +312,14 @@ class WhatsAppBot {
         const normalizedTranscription =
           this.textNormalizer.normalizeText(transcription);
 
-        // Enviar apenas mensagem de processamento para feedback mais natural
+        // Enviar confirmação da transcrição (mostra versão normalizada se houver diferença)
+        const confirmationMessage =
+          normalizedTranscription !== transcription
+            ? `🎤 Transcrevi seu áudio: "${transcription}"\n✅ Texto normalizado: "${normalizedTranscription}"`
+            : `🎤 Transcrevi seu áudio: "${transcription}"`;
+        await this.sendMessage(fromNumber, confirmationMessage);
+
+        // Enviar mensagem de processamento para dar feedback ao usuário
         await this.sendMessage(
           fromNumber,
           "🤖 Processando sua consulta, aguarde uns instantes..."
