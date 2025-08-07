@@ -309,6 +309,23 @@ class WhatsAppBot {
           "🤖 Processando sua consulta, aguarde uns instantes..."
         );
 
+        // Verificar se usuário pediu áudio na transcrição
+        const audioRequestType = this.isAudioRequest(normalizedTranscription);
+        if (audioRequestType === 'disable') {
+          // Desabilitar preferência de áudio
+          this.audioPreferences.delete(fromNumber);
+          await this.sendMessage(fromNumber, "✅ Preferência de áudio desabilitada. Agora só perguntarei se você quiser áudio.");
+          return;
+        } else if (audioRequestType === true) {
+          // Usuário pediu áudio - ativar preferência automática
+          this.audioPreferences.set(fromNumber, {
+            preferAudio: true,
+            timestamp: Date.now(),
+            lastMessage: normalizedTranscription
+          });
+          logger.info(`🎧 Usuário ${fromNumber.substring(0, 10)}... solicitou áudio via transcrição, ativando preferência automática`);
+        }
+
         // Processar o texto transcrito normalizado como uma mensagem normal
         logger.info("Processando texto transcrito normalizado...");
         const response = await this.openaiService.processMessage(
@@ -381,12 +398,9 @@ class WhatsAppBot {
 
     // Palavras que indicam solicitação de áudio
     const audioKeywords = [
-      "audio",
-      "áudio",
-      "som",
-      "escutar",
-      "ouvir",
-      "falar",
+      "audio", "áudio", "som", "escutar", "ouvir", "falar",
+      "responda em áudio", "responda em alto", "só responda em áudio",
+      "quero áudio", "em voz", "falando", "voz", "oral", "sonoro"
     ];
 
     // Emojis relacionados a áudio
