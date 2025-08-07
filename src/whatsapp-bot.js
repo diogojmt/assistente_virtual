@@ -22,6 +22,7 @@ class WhatsAppBot {
     this.pendingAudioRequests = new Map(); // Armazena solicitações de áudio pendentes
     this.audioPreferences = new Map(); // Armazena preferências de áudio por usuário
     this.lastUserMessages = new Map(); // Armazena últimas mensagens para contexto emocional
+    this.firstTimeUsers = new Set(); // Controla primeira interação dos usuários
   }
 
   async initialize() {
@@ -177,6 +178,13 @@ class WhatsAppBot {
 
   async processTextMessage(messageText, fromNumber, senderName) {
     try {
+      // Verificar se é primeira interação do usuário
+      const isFirstTime = !this.firstTimeUsers.has(fromNumber);
+      if (isFirstTime) {
+        this.firstTimeUsers.add(fromNumber);
+        await this.sendWelcomeMessage(fromNumber);
+      }
+
       // Verificar se é uma solicitação de áudio
       const audioRequestType = this.isAudioRequest(messageText);
       if (audioRequestType === 'disable') {
@@ -245,6 +253,13 @@ class WhatsAppBot {
 
   async processAudioMessage(message, fromNumber, senderName) {
     try {
+      // Verificar se é primeira interação do usuário
+      const isFirstTime = !this.firstTimeUsers.has(fromNumber);
+      if (isFirstTime) {
+        this.firstTimeUsers.add(fromNumber);
+        await this.sendWelcomeMessage(fromNumber);
+      }
+
       const audioMessage = message.message.audioMessage;
       const durationSeconds = audioMessage.seconds || 0;
 
@@ -1083,6 +1098,26 @@ class WhatsAppBot {
       if (now - data.timestamp > prefMaxAge) {
         this.audioPreferences.delete(userId);
       }
+    }
+  }
+
+  /**
+   * Envia mensagem de boas-vindas para novos usuários
+   */
+  async sendWelcomeMessage(fromNumber) {
+    try {
+      const welcomeMessage = 
+        "Olá! Sou a assistente virtual da Secretaria Municipal da Fazenda de Arapiraca-AL 🏛️\n\n" +
+        "💬 Você pode me enviar mensagens de *texto ou áudio*\n" +
+        "🎧 Posso responder em *texto e áudio* (sempre pergunto se deseja ouvir)\n" +
+        "📋 Consulto vínculos, débitos e orientações tributárias municipais\n\n" +
+        "⚠️ Este sistema está em fase de testes. Como posso ajudá-lo hoje?";
+      
+      await this.sendMessage(fromNumber, welcomeMessage);
+      logger.info(`Mensagem de boas-vindas enviada para ${fromNumber.substring(0, 10)}...`);
+    } catch (error) {
+      logger.error("Erro ao enviar mensagem de boas-vindas:", error.message);
+      // Não lançar erro para não interromper o fluxo principal
     }
   }
 
