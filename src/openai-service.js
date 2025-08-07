@@ -9,6 +9,7 @@ class OpenAIService {
     this.assistantId = process.env.OPENAI_ASSISTANT_ID;
     this.baseURL = 'https://api.openai.com/v1';
     this.userThreads = new Map(); // Manter threads por usuário
+    this.threadMessageCounts = new Map(); // Contar mensagens por thread
     
     if (!this.apiKey || !this.assistantId) {
       throw new Error('OPENAI_API_KEY e OPENAI_ASSISTANT_ID devem estar definidos no arquivo .env');
@@ -68,8 +69,13 @@ class OpenAIService {
       logger.info(`Mensagem adicionada à thread ${threadId}`);
       return response.data;
     } catch (error) {
-      logger.error('Erro ao adicionar mensagem à thread:', error.response?.data || error.message);
-      throw new Error('Falha ao adicionar mensagem à thread');
+      logger.error('❌ Erro ao adicionar mensagem à thread:', error.message);
+      logger.error('Stack trace:', error.stack);
+      if (error.response) {
+        logger.error('Status HTTP:', error.response.status);
+        logger.error('Response data:', JSON.stringify(error.response.data));
+      }
+      throw new Error(`Falha ao adicionar mensagem à thread: ${error.message}`);
     }
   }
 
@@ -376,18 +382,32 @@ class OpenAIService {
       
       // Obter ou criar thread para o usuário
       threadId = this.userThreads.get(userId);
+      const messageCount = this.threadMessageCounts.get(userId) || 0;
+      
+      // Limpar thread se tiver muitas mensagens (prevenir corrupção)
+      const maxMessages = process.env.NODE_ENV === 'production' ? 20 : 50; // Menor no Replit
+      if (threadId && messageCount > maxMessages) {
+        logger.warn(`🧹 Thread ${threadId} tem ${messageCount} mensagens, limpando para evitar problemas`);
+        this.clearUserThread(userId);
+        threadId = null;
+      }
+      
       if (!threadId) {
         logger.info('Criando nova thread...');
         threadId = await this.createThread();
         this.userThreads.set(userId, threadId);
+        this.threadMessageCounts.set(userId, 0);
         logger.info(`Nova thread criada para usuário ${userId}: ${threadId}`);
       } else {
-        logger.info(`Usando thread existente para usuário ${userId}: ${threadId}`);
+        logger.info(`Usando thread existente para usuário ${userId}: ${threadId} (${messageCount} mensagens)`);
       }
       
       // Adicionar mensagem à thread
       logger.info('Adicionando mensagem à thread...');
       await this.addMessageToThread(threadId, message);
+      
+      // Incrementar contador de mensagens
+      this.threadMessageCounts.set(userId, (this.threadMessageCounts.get(userId) || 0) + 1);
       
       // Executar assistant
       logger.info('Iniciando run da thread...');
@@ -414,13 +434,31 @@ class OpenAIService {
       
       return responseText;
     } catch (error) {
-      logger.error('Erro no processamento da mensagem:', error.message);
+      logger.error('❌ Erro no processamento da mensagem:', error.message);
       logger.error('Stack trace completo:', error.stack);
       
+      // Log detalhado do erro
+      if (error.response) {
+        logger.error('Response status:', error.response.status);
+        logger.error('Response data:', JSON.stringify(error.response.data));
+      }
+      
       // Se a thread falhou, limpar e tentar criar nova
-      if (error.message.includes('thread') || error.message.includes('run') || error.message.includes('Timeout')) {
-        logger.warn(`Thread ${threadId} falhou, limpando para usuário ${userId}`);
+      if (error.message.includes('thread') || error.message.includes('run') || error.message.includes('Timeout') || error.message.includes('Falha ao adicionar')) {
+        logger.warn(`🗑️ Thread ${threadId} falhou, limpando para usuário ${userId}`);
         this.clearUserThread(userId);
+        
+        // Tentar uma vez com nova thread
+        if (!error.retried) {
+          logger.info('🔄 Tentando novamente com nova thread...');
+          error.retried = true;
+          try {
+            return await this.processMessage(message, userId);
+          } catch (retryError) {
+            logger.error('❌ Falha na segunda tentativa:', retryError.message);
+            throw retryError;
+          }
+        }
       }
       
       throw error;
@@ -430,7 +468,48 @@ class OpenAIService {
   // Método para limpar thread de um usuário (opcional)
   clearUserThread(userId) {
     this.userThreads.delete(userId);
-    logger.info(`Thread do usuário ${userId} removida`);
+    this.threadMessageCounts.delete(userId);
+    logger.info(`🗑️ Thread do usuário ${userId} removida`);
+  }
+
+  // Método para obter estatísticas das threads
+  getThreadStats() {
+    const stats = {
+      totalThreads: this.userThreads.size,
+      threadsWithCounts: this.threadMessageCounts.size,
+      threadDetails: []
+    };
+
+    for (const [userId, threadId] of this.userThreads.entries()) {
+      const messageCount = this.threadMessageCounts.get(userId) || 0;
+      stats.threadDetails.push({
+        userId: userId.substring(0, 10) + '...', // Mascarar número
+        threadId: threadId.substring(0, 20) + '...',
+        messageCount: messageCount
+      });
+    }
+
+    return stats;
+  }
+
+  // Limpeza preventiva de threads antigas ou problemáticas
+  cleanupThreads() {
+    const maxMessages = process.env.NODE_ENV === 'production' ? 20 : 50;
+    let cleanedCount = 0;
+
+    for (const [userId, messageCount] of this.threadMessageCounts.entries()) {
+      if (messageCount > maxMessages) {
+        logger.info(`🧹 Limpando thread com ${messageCount} mensagens para usuário ${userId.substring(0, 10)}...`);
+        this.clearUserThread(userId);
+        cleanedCount++;
+      }
+    }
+
+    if (cleanedCount > 0) {
+      logger.info(`🧹 Limpeza concluída: ${cleanedCount} threads removidas`);
+    }
+
+    return cleanedCount;
   }
 }
 

@@ -169,16 +169,52 @@ ls -la temp/
 
 ---
 
+---
+
+### 🔧 Correções Implementadas (Log Analisado)
+
+#### ❌ **Problemas Identificados no Log:**
+1. **Logs de erro vazios**: "ERROR: Erro ao adicionar mensagem à thread:"
+2. **Thread OpenAI corrompida**: Falha ao adicionar mensagem
+3. **Conexão WhatsApp instável**: Erro 503 com reconexão
+
+#### ✅ **Soluções Implementadas:**
+
+**1. Logs Detalhados:**
+```javascript
+// Antes: logs vazios
+ERROR: Erro ao adicionar mensagem à thread:
+
+// Agora: logs completos
+❌ Erro ao adicionar mensagem à thread: Request failed with status 400
+Stack trace: Error: Request failed...
+Status HTTP: 400
+Response data: {"error": {"message": "..."}}
+```
+
+**2. Gerenciamento Inteligente de Threads:**
+- **Limite automático**: 20 mensagens no Replit (vs 50 local)
+- **Limpeza preventiva**: Remove threads antes de corrompê-las
+- **Retry automático**: Cria nova thread se a atual falhar
+- **Estatísticas**: Monitoramento de threads ativas
+
+**3. Tratamento de Erros Melhorado:**
+- **Mensagens específicas** para cada tipo de erro
+- **Retry automático** para threads corrompidas
+- **Limpeza automática** a cada 30 minutos
+
+---
+
 ### 📞 Suporte
 
 **Se o problema persistir:**
-1. Colete logs completos da sessão
-2. Verifique configuração de rede/firewall
-3. Teste com conta WhatsApp diferente
-4. Considere limitações da API OpenAI TTS
+1. Colete logs completos da sessão (agora mais detalhados)
+2. Verifique estatísticas de threads: `📊 Threads ativas: X`
+3. Observe limpezas automáticas: `🧹 X threads OpenAI limpas`
+4. Teste com conta WhatsApp diferente
 
 **Logs essenciais para suporte:**
 - Log completo desde "Processando solicitação de áudio"
-- Configuração de ambiente (sem secrets)
-- Tamanho e formato dos arquivos gerados
+- Estatísticas de threads: `📊 Threads ativas`
+- Erros detalhados com stack trace completo
 - Resposta da API do WhatsApp (message IDs)
