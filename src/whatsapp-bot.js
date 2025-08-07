@@ -312,12 +312,10 @@ class WhatsAppBot {
         const normalizedTranscription =
           this.textNormalizer.normalizeText(transcription);
 
-        // Enviar confirmação da transcrição (mostra versão normalizada se houver diferença)
-        const confirmationMessage =
-          normalizedTranscription !== transcription
-            ? `🎤 Transcrevi seu áudio: "${transcription}"\n✅ Texto normalizado: "${normalizedTranscription}"`
-            : `🎤 Transcrevi seu áudio: "${transcription}"`;
-        await this.sendMessage(fromNumber, confirmationMessage);
+        // Transcrição removida da tela para melhor fluidez - apenas log interno
+        if (normalizedTranscription !== transcription) {
+          logger.info(`Texto normalizado para ${senderName}: "${normalizedTranscription}"`);
+        }
 
         // Enviar mensagem de processamento para dar feedback ao usuário
         await this.sendMessage(
