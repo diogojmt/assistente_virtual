@@ -338,8 +338,8 @@ class WhatsAppBot {
       await this.sock.sendPresenceUpdate('recording', fromNumber);
       
       try {
-        // Gerar áudio usando TTS
-        const audioFilePath = await this.ttsService.generateAudio(pendingResponse.text, 'nova', 'opus');
+        // Gerar áudio usando TTS (mp3 é mais compatível)
+        const audioFilePath = await this.ttsService.generateAudio(pendingResponse.text, 'nova', 'mp3');
         
         // Enviar áudio via WhatsApp
         await this.sendAudioMessage(fromNumber, audioFilePath);
@@ -357,18 +357,25 @@ class WhatsAppBot {
         logger.info(`Áudio TTS enviado com sucesso para ${senderName}`);
         
       } catch (error) {
-        logger.error(`Erro ao gerar/enviar áudio para ${senderName}:`, error.message);
+        logger.error(`❌ Erro ao gerar/enviar áudio para ${senderName}:`, error.message);
+        logger.error('Stack trace:', error.stack);
         
-        let errorMessage = '❌ Não foi possível gerar o áudio. ';
+        let errorMessage = '❌ Não foi possível enviar o áudio. ';
         
-        if (error.message.includes('muito longo')) {
+        if (error.message.includes('muito longo') || error.message.includes('4096')) {
           errorMessage += 'A resposta é muito longa para conversão em áudio.';
-        } else if (error.message.includes('rate')) {
+        } else if (error.message.includes('rate') || error.message.includes('429')) {
           errorMessage += 'Limite de uso da API excedido. Tente novamente em alguns minutos.';
         } else if (error.message.includes('timeout')) {
           errorMessage += 'Timeout na geração. Tente novamente.';
+        } else if (error.message.includes('muito grande') || error.message.includes('16MB')) {
+          errorMessage += 'Arquivo de áudio muito grande.';
+        } else if (error.message.includes('formato')) {
+          errorMessage += 'Formato de áudio não suportado.';
+        } else if (error.message.includes('autenticação') || error.message.includes('401')) {
+          errorMessage += 'Erro de configuração. Contate o suporte.';
         } else {
-          errorMessage += 'Tente novamente em alguns instantes.';
+          errorMessage += 'Tente novamente em alguns instantes ou continue usando mensagens de texto.';
         }
         
         await this.sendMessage(fromNumber, errorMessage);
@@ -416,24 +423,125 @@ class WhatsAppBot {
   async sendAudioMessage(to, audioFilePath) {
     try {
       const fs = require('fs-extra');
+      const path = require('path');
       
       if (!await fs.pathExists(audioFilePath)) {
         throw new Error('Arquivo de áudio não encontrado');
       }
       
+      // Verificar tamanho do arquivo (limite menor no Replit)
+      const stats = await fs.stat(audioFilePath);
+      const maxSize = process.env.NODE_ENV === 'production' ? 3 * 1024 * 1024 : 16 * 1024 * 1024; // 3MB no Replit
+      if (stats.size > maxSize) {
+        throw new Error(`Arquivo de áudio muito grande (máximo ${Math.round(maxSize / 1024 / 1024)}MB no Replit)`);
+      }
+      
       // Ler arquivo de áudio
       const audioBuffer = await fs.readFile(audioFilePath);
       
-      // Enviar como mensagem de voz (PTT = Push To Talk)
-      await this.sock.sendMessage(to, {
-        audio: audioBuffer,
-        mimetype: 'audio/opus',
-        ptt: true // Marca como mensagem de voz
-      });
+      // Determinar mimetype baseado na extensão
+      const fileExtension = path.extname(audioFilePath).toLowerCase();
+      let mimetype = 'audio/mpeg'; // Default para MP3
       
-      logger.info(`Áudio enviado: ${audioFilePath} (${audioBuffer.length} bytes)`);
+      switch (fileExtension) {
+        case '.mp3':
+          mimetype = 'audio/mpeg';
+          break;
+        case '.mp4':
+          mimetype = 'audio/mp4';
+          break;
+        case '.opus':
+          mimetype = 'audio/opus';
+          break;
+        case '.ogg':
+          mimetype = 'audio/ogg';
+          break;
+        case '.aac':
+          mimetype = 'audio/aac';
+          break;
+        case '.flac':
+          mimetype = 'audio/flac';
+          break;
+      }
+      
+      logger.info(`📤 Enviando áudio: ${path.basename(audioFilePath)} (${(stats.size / 1024).toFixed(1)}KB, ${mimetype})`);
+      
+      // Tentar múltiplas abordagens de envio
+      let messageResponse;
+      
+      try {
+        // Abordagem 1: Envio direto como PTT (nota de voz) - otimizado para Replit
+        const audioPayload = {
+          audio: audioBuffer,
+          mimetype: mimetype,
+          ptt: true
+        };
+        
+        // No Replit, adicionar configurações extras para estabilidade
+        if (process.env.NODE_ENV === 'production') {
+          audioPayload.quoted = null; // Remover referências desnecessárias
+        }
+        
+        messageResponse = await this.sock.sendMessage(to, audioPayload);
+        
+        logger.info(`✅ Áudio enviado como PTT - ID: ${messageResponse?.key?.id}`);
+        
+      } catch (pttError) {
+        logger.warn('❌ Falha no envio PTT, tentando como áudio normal:', pttError.message);
+        
+        // Abordagem 2: Envio como áudio normal (sem PTT)
+        try {
+          messageResponse = await this.sock.sendMessage(to, {
+            audio: audioBuffer,
+            mimetype: mimetype,
+            ptt: false,
+            fileName: `audio_tts${fileExtension}`
+          });
+          
+          logger.info(`✅ Áudio enviado como arquivo - ID: ${messageResponse?.key?.id}`);
+          
+        } catch (normalError) {
+          logger.warn('❌ Falha no envio normal, tentando como caminho direto (Replit):', normalError.message);
+          
+          // Abordagem 3: Replit específica - envio via caminho do arquivo
+          try {
+            messageResponse = await this.sock.sendMessage(to, {
+              audio: audioFilePath, // Passar caminho direto em vez de buffer
+              mimetype: 'audio/mpeg',
+              ptt: true
+            });
+            
+            logger.info(`✅ Áudio enviado via caminho direto - ID: ${messageResponse?.key?.id}`);
+            
+          } catch (pathError) {
+            logger.warn('❌ Falha no envio via caminho, tentando MP3 mínimo:', pathError.message);
+            
+            // Abordagem 4: Configuração mínima como último recurso
+            if (fileExtension !== '.mp3') {
+              throw new Error('Falha no envio de áudio - formato não suportado no Replit');
+            }
+            
+            messageResponse = await this.sock.sendMessage(to, {
+              audio: audioBuffer,
+              mimetype: 'audio/mpeg',
+              ptt: true
+            });
+            
+            logger.info(`✅ Áudio enviado como MP3 básico - ID: ${messageResponse?.key?.id}`);
+          }
+        }
+      }
+      
+      // Verificar se a mensagem foi realmente enviada
+      if (!messageResponse || !messageResponse.key) {
+        throw new Error('Falha na confirmação de envio do áudio');
+      }
+      
+      return messageResponse;
+      
     } catch (error) {
-      logger.error('Erro ao enviar áudio:', error.message);
+      logger.error('❌ Erro crítico ao enviar áudio:', error.message);
+      logger.error('Stack trace:', error.stack);
       throw error;
     }
   }

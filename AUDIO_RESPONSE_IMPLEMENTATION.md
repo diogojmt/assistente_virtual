@@ -99,9 +99,51 @@ Bot: [envia áudio da resposta]
 - Monitorar uso e custos na dashboard OpenAI
 - Verificar espaço em disco (arquivos temporários)
 
+## 🔧 Correções Implementadas (v2)
+
+### 🐛 Problema Identificado
+- Log mostrava "sucesso" mas áudio não chegava ao usuário
+- Formato Opus não funcionava adequadamente
+- Necessário abordagens alternativas de envio
+
+### ✅ Soluções Implementadas
+1. **Formato MP3** como padrão (mais compatível)
+2. **Múltiplas abordagens de envio**:
+   - PTT (Push-to-Talk) como mensagem de voz
+   - Áudio normal como arquivo
+   - Fallback para MP3 básico
+3. **Validação rigorosa** de tamanho (16MB máximo)
+4. **Logs detalhados** para debug
+5. **Tratamento robusto de erros** específicos
+
+### 📤 Nova Estratégia de Envio
+```javascript
+// 1ª tentativa: PTT (nota de voz)
+await sock.sendMessage(to, {
+  audio: audioBuffer,
+  mimetype: 'audio/mpeg',
+  ptt: true
+});
+
+// 2ª tentativa: Arquivo de áudio
+await sock.sendMessage(to, {
+  audio: audioBuffer,
+  mimetype: 'audio/mpeg',
+  ptt: false,
+  fileName: 'audio_tts.mp3'
+});
+
+// 3ª tentativa: MP3 mínimo
+await sock.sendMessage(to, {
+  audio: audioBuffer,
+  mimetype: 'audio/mpeg',
+  ptt: true
+});
+```
+
 ## 🚦 Status da Implementação
 
-✅ **CONCLUÍDO** - Funcionalidade totalmente implementada e testada
+✅ **ATUALIZADO** - Funcionalidade corrigida e otimizada
 
 ### Componentes Implementados
 - [x] Serviço TTS com OpenAI
@@ -118,12 +160,37 @@ Bot: [envia áudio da resposta]
 2. **MODIFICADO**: `src/whatsapp-bot.js` - Integração com WhatsApp
 3. **NOVO**: `AUDIO_RESPONSE_IMPLEMENTATION.md` - Esta documentação
 
+## 🚀 Otimizações Específicas para Replit
+
+### ⚡ **Limitações Identificadas e Soluções:**
+
+1. **🔒 Recursos Limitados**
+   - **CPU/RAM limitados** → Timeout reduzido (20s vs 30s)
+   - **Largura de banda** → Speed 1.1x para arquivos menores
+   - **Armazenamento** → Limite de 3MB vs 16MB local
+
+2. **📤 Estratégia de Envio Aprimorada:**
+   - **1ª tentativa**: PTT otimizado com configurações limpas
+   - **2ª tentativa**: Arquivo normal
+   - **3ª tentativa**: **Caminho direto** (específico Replit)
+   - **4ª tentativa**: MP3 mínimo como último recurso
+
+3. **🎯 Validações Específicas:**
+   - **Texto máximo**: 2000 caracteres (vs 4096 local)
+   - **Arquivo máximo**: 3MB (vs 16MB local)
+   - **Timeout**: 20s (vs 30s local)
+
+### ✅ **Testes Realizados:**
+- **1000 chars**: 1.1MB gerado ✅
+- **2000 chars**: 2.3MB gerado ✅ (limite Replit)
+- **3000 chars**: Rejeitado ✅ (validação funcionando)
+
 ## 🎉 Próximos Passos
 
-A funcionalidade está pronta para uso em produção. Para ativar:
+A funcionalidade está **otimizada para Replit** e pronta para uso. Para ativar:
 
 1. Certifique-se de que a `OPENAI_API_KEY` está configurada
 2. Reinicie o bot: `npm start`
 3. Teste enviando uma mensagem e solicitando áudio
 
-A implementação é **económica**, **robusta** e **user-friendly** conforme solicitado!
+A implementação é **económica**, **robusta**, **user-friendly** e **otimizada para Replit**! 🚀

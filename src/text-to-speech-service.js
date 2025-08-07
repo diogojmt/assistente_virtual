@@ -41,15 +41,17 @@ class TextToSpeechService {
    * @param {string} format - Formato do áudio (mp3, opus, aac, flac)
    * @returns {Promise<string>} Caminho do arquivo gerado
    */
-  async generateAudio(text, voice = 'nova', format = 'ogg') {
+  async generateAudio(text, voice = 'nova', format = 'mp3') {
     try {
       // Validar parâmetros
       if (!text || text.trim().length === 0) {
         throw new Error('Texto não pode estar vazio');
       }
 
-      if (text.length > 4096) {
-        throw new Error('Texto muito longo (máximo 4096 caracteres)');
+      // Replit tem limitações de recursos - usar textos menores
+      const maxLength = process.env.NODE_ENV === 'production' ? 2000 : 4096;
+      if (text.length > maxLength) {
+        throw new Error(`Texto muito longo (máximo ${maxLength} caracteres para Replit)`);
       }
 
       const validVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
@@ -59,7 +61,7 @@ class TextToSpeechService {
 
       const validFormats = ['mp3', 'opus', 'aac', 'flac'];
       if (!validFormats.includes(format)) {
-        format = 'opus'; // Fallback para formato opus (compatível com WhatsApp)
+        format = 'mp3'; // Fallback para formato mp3 (mais compatível)
       }
 
       logger.info(`Gerando áudio TTS - Tamanho: ${text.length} chars, Voz: ${voice}, Formato: ${format}`);
@@ -79,7 +81,7 @@ class TextToSpeechService {
         }
       }
 
-      // Fazer requisição para OpenAI TTS
+      // Fazer requisição para OpenAI TTS (otimizado para Replit)
       const response = await axios.post(
         `${this.baseURL}/audio/speech`,
         {
@@ -87,7 +89,7 @@ class TextToSpeechService {
           input: text,
           voice: voice,
           response_format: format,
-          speed: 1.0
+          speed: 1.1 // Ligeiramente mais rápido para economizar largura de banda
         },
         {
           headers: {
@@ -95,7 +97,9 @@ class TextToSpeechService {
             'Content-Type': 'application/json'
           },
           responseType: 'arraybuffer',
-          timeout: 30000 // 30 segundos timeout
+          timeout: process.env.NODE_ENV === 'production' ? 20000 : 30000, // Timeout menor no Replit
+          maxContentLength: 5 * 1024 * 1024, // Máximo 5MB para não sobrecarregar Replit
+          maxBodyLength: 5 * 1024 * 1024
         }
       );
 
