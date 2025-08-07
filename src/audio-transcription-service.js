@@ -165,13 +165,19 @@ class AudioTranscriptionService {
       return transcription;
     } catch (error) {
       logger.error('Erro na transcrição:', error.message);
+      logger.error('Erro completo:', error);
       
       if (error.response?.status === 400) {
+        logger.error('Resposta da API (400):', error.response?.data);
         throw new Error('Formato de áudio não suportado ou arquivo corrompido');
       } else if (error.response?.status === 413) {
         throw new Error('Arquivo muito grande. Limite: 25MB');
       } else if (error.code === 'ECONNABORTED') {
         throw new Error('Timeout na transcrição. Tente com um áudio menor');
+      } else if (error.response) {
+        logger.error('Status da resposta:', error.response.status);
+        logger.error('Dados da resposta:', error.response.data);
+        throw new Error(`Erro da API OpenAI (${error.response.status}): ${error.response.data?.error?.message || error.message}`);
       }
       
       throw new Error(`Erro na transcrição: ${error.message}`);
