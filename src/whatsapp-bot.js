@@ -216,11 +216,17 @@ class WhatsAppBot {
       // Parar indicador de "digitando"
       await this.sock.sendPresenceUpdate("paused", fromNumber);
 
+      // Log da resposta original com referências para histórico
+      logger.info(`📄 Resposta original da OpenAI: "${response.substring(0, 200)}..."`);
+      
+      // Remover referências de documentos da resposta para o usuário
+      const cleanResponse = this.removeDocumentReferences(response);
+
       // Enviar resposta com pergunta sobre áudio
-      await this.sendMessageWithAudioPrompt(fromNumber, response);
+      await this.sendMessageWithAudioPrompt(fromNumber, cleanResponse);
 
       logger.info(
-        `Resposta enviada para ${senderName}: "${response.substring(
+        `Resposta enviada para ${senderName}: "${cleanResponse.substring(
           0,
           100
         )}..."`
@@ -350,11 +356,17 @@ class WhatsAppBot {
         // Parar indicador de "digitando"
         await this.sock.sendPresenceUpdate("paused", fromNumber);
 
+        // Log da resposta original com referências para histórico
+        logger.info(`📄 Resposta original da OpenAI: "${response.substring(0, 200)}..."`);
+        
+        // Remover referências de documentos da resposta para o usuário
+        const cleanResponse = this.removeDocumentReferences(response);
+
         // Enviar resposta baseada na transcrição com pergunta sobre áudio
-        await this.sendMessageWithAudioPrompt(fromNumber, response);
+        await this.sendMessageWithAudioPrompt(fromNumber, cleanResponse);
 
         logger.info(
-          `Resposta ao áudio enviada para ${senderName}: "${response.substring(
+          `Resposta ao áudio enviada para ${senderName}: "${cleanResponse.substring(
             0,
             100
           )}..."`
@@ -753,6 +765,30 @@ class WhatsAppBot {
    */
   getLastUserMessage(fromNumber) {
     return this.lastUserMessages.get(fromNumber) || "";
+  }
+
+  /**
+   * Remove referências de documentos da resposta para o usuário
+   * Mantém as referências apenas nos logs
+   */
+  removeDocumentReferences(text) {
+    if (!text) return text;
+    
+    // Padrão para capturar referências como 【5:5†01 Codigo Tributario de Arapiraca-ATUALIZADO.txt】
+    const documentRefPattern = /【[^】]*】/g;
+    
+    // Guardar as referências para log
+    const references = text.match(documentRefPattern) || [];
+    
+    if (references.length > 0) {
+      logger.info(`📄 Referências de documentos removidas da mensagem do usuário:`, references);
+    }
+    
+    // Remover as referências do texto
+    const cleanText = text.replace(documentRefPattern, '').trim();
+    
+    // Limpar espaços duplos ou múltiplos que possam ter ficado
+    return cleanText.replace(/\s+/g, ' ').trim();
   }
 
   /**
