@@ -188,10 +188,13 @@ class WhatsAppBot {
 
       // Verificar se é uma solicitação de áudio
       const audioRequestType = this.isAudioRequest(messageText);
-      if (audioRequestType === 'disable') {
+      if (audioRequestType === "disable") {
         // Desabilitar preferência de áudio
         this.audioPreferences.delete(fromNumber);
-        await this.sendMessage(fromNumber, "✅ Preferência de áudio desabilitada. Agora só perguntarei se você quiser áudio.");
+        await this.sendMessage(
+          fromNumber,
+          "✅ Preferência de áudio desabilitada. Agora só perguntarei se você quiser áudio."
+        );
         return;
       } else if (audioRequestType === true) {
         await this.handleAudioRequest(fromNumber, senderName);
@@ -203,7 +206,7 @@ class WhatsAppBot {
 
       // Armazenar última mensagem do usuário para contexto emocional
       this.lastUserMessages.set(fromNumber, messageText);
-      
+
       // Normalizar texto (limpar números com caracteres especiais)
       const normalizedText = this.textNormalizer.normalizeText(messageText);
 
@@ -217,8 +220,10 @@ class WhatsAppBot {
       await this.sock.sendPresenceUpdate("paused", fromNumber);
 
       // Log da resposta original com referências para histórico
-      logger.info(`📄 Resposta original da OpenAI: "${response.substring(0, 200)}..."`);
-      
+      logger.info(
+        `📄 Resposta original da OpenAI: "${response.substring(0, 200)}..."`
+      );
+
       // Remover referências de documentos da resposta para o usuário
       const cleanResponse = this.removeDocumentReferences(response);
 
@@ -237,24 +242,35 @@ class WhatsAppBot {
 
       // Enviar mensagem de erro específica baseada no tipo
       let errorMessage = "Desculpe, ocorreu um erro ao processar sua mensagem.";
-      
-      if (error.message.includes('thread') || error.message.includes('OpenAI')) {
-        errorMessage += ' Problema temporário com o sistema de IA. Tente novamente.';
-      } else if (error.message.includes('timeout') || error.message.includes('Timeout')) {
-        errorMessage += ' Timeout na resposta. Tente uma pergunta mais simples.';
-      } else if (error.message.includes('rate') || error.message.includes('429')) {
-        errorMessage += ' Sistema ocupado. Aguarde alguns minutos.';
+
+      if (
+        error.message.includes("thread") ||
+        error.message.includes("OpenAI")
+      ) {
+        errorMessage +=
+          " Problema temporário com o sistema de IA. Tente novamente.";
+      } else if (
+        error.message.includes("timeout") ||
+        error.message.includes("Timeout")
+      ) {
+        errorMessage +=
+          " Timeout na resposta. Tente uma pergunta mais simples.";
+      } else if (
+        error.message.includes("rate") ||
+        error.message.includes("429")
+      ) {
+        errorMessage += " Sistema ocupado. Aguarde alguns minutos.";
       } else {
-        errorMessage += ' Tente novamente em alguns instantes.';
+        errorMessage += " Tente novamente em alguns instantes.";
       }
-      
+
       await this.sendMessage(fromNumber, errorMessage);
 
       logger.error(
         `❌ Erro ao processar mensagem de ${senderName}:`,
         error.message
       );
-      logger.error('Stack trace:', error.stack);
+      logger.error("Stack trace:", error.stack);
     }
   }
 
@@ -320,30 +336,40 @@ class WhatsAppBot {
 
         // Transcrição removida da tela para melhor fluidez - apenas log interno
         if (normalizedTranscription !== transcription) {
-          logger.info(`Texto normalizado para ${senderName}: "${normalizedTranscription}"`);
+          logger.info(
+            `Texto normalizado para ${senderName}: "${normalizedTranscription}"`
+          );
         }
 
         // Enviar mensagem de processamento para dar feedback ao usuário
         await this.sendMessage(
           fromNumber,
-          "🤖 Processando sua consulta, aguarde uns instantes..."
+          "🤖 Processando sua solicitação, aguarde uns instantes..."
         );
 
         // Verificar se usuário pediu áudio na transcrição
         const audioRequestType = this.isAudioRequest(normalizedTranscription);
-        if (audioRequestType === 'disable') {
+        if (audioRequestType === "disable") {
           // Desabilitar preferência de áudio
           this.audioPreferences.delete(fromNumber);
-          await this.sendMessage(fromNumber, "✅ Preferência de áudio desabilitada. Agora só perguntarei se você quiser áudio.");
+          await this.sendMessage(
+            fromNumber,
+            "✅ Preferência de áudio desabilitada. Agora só perguntarei se você quiser áudio."
+          );
           return;
         } else if (audioRequestType === true) {
           // Usuário pediu áudio - ativar preferência automática
           this.audioPreferences.set(fromNumber, {
             preferAudio: true,
             timestamp: Date.now(),
-            lastMessage: normalizedTranscription
+            lastMessage: normalizedTranscription,
           });
-          logger.info(`🎧 Usuário ${fromNumber.substring(0, 10)}... solicitou áudio via transcrição, ativando preferência automática`);
+          logger.info(
+            `🎧 Usuário ${fromNumber.substring(
+              0,
+              10
+            )}... solicitou áudio via transcrição, ativando preferência automática`
+          );
         }
 
         // Processar o texto transcrito normalizado como uma mensagem normal
@@ -357,8 +383,10 @@ class WhatsAppBot {
         await this.sock.sendPresenceUpdate("paused", fromNumber);
 
         // Log da resposta original com referências para histórico
-        logger.info(`📄 Resposta original da OpenAI: "${response.substring(0, 200)}..."`);
-        
+        logger.info(
+          `📄 Resposta original da OpenAI: "${response.substring(0, 200)}..."`
+        );
+
         // Remover referências de documentos da resposta para o usuário
         const cleanResponse = this.removeDocumentReferences(response);
 
@@ -417,16 +445,33 @@ class WhatsAppBot {
     const text = messageText.toLowerCase().trim();
 
     // Verificar se é comando para desabilitar áudio
-    const disableCommands = ['parar áudio', 'desabilitar áudio', 'sem áudio', 'só texto'];
-    if (disableCommands.some(cmd => text.includes(cmd))) {
-      return 'disable';
+    const disableCommands = [
+      "parar áudio",
+      "desabilitar áudio",
+      "sem áudio",
+      "só texto",
+    ];
+    if (disableCommands.some((cmd) => text.includes(cmd))) {
+      return "disable";
     }
 
     // Palavras que indicam solicitação de áudio
     const audioKeywords = [
-      "audio", "áudio", "som", "escutar", "ouvir", "falar",
-      "responda em áudio", "responda em alto", "só responda em áudio",
-      "quero áudio", "em voz", "falando", "voz", "oral", "sonoro"
+      "audio",
+      "áudio",
+      "som",
+      "escutar",
+      "ouvir",
+      "falar",
+      "responda em áudio",
+      "responda em alto",
+      "só responda em áudio",
+      "quero áudio",
+      "em voz",
+      "falando",
+      "voz",
+      "oral",
+      "sonoro",
     ];
 
     // Emojis relacionados a áudio
@@ -467,14 +512,20 @@ class WhatsAppBot {
       if (!pendingResponse) {
         // Verificar se há uma resposta anterior para converter em áudio
         const lastResponse = this.lastResponses.get(fromNumber);
-        
-        if (lastResponse && (Date.now() - lastResponse.timestamp) < (5 * 60 * 1000)) { // 5 minutos
+
+        if (
+          lastResponse &&
+          Date.now() - lastResponse.timestamp < 5 * 60 * 1000
+        ) {
+          // 5 minutos
           // Converter resposta anterior em áudio
-          logger.info(`🔄 Convertendo resposta anterior em áudio para ${senderName}`);
-          
+          logger.info(
+            `🔄 Convertendo resposta anterior em áudio para ${senderName}`
+          );
+
           // Enviar indicador de "gravando áudio"
           await this.sock.sendPresenceUpdate("recording", fromNumber);
-          
+
           try {
             // Gerar áudio da resposta anterior
             const audioFilePath = await this.ttsService.generateAudio(
@@ -482,40 +533,45 @@ class WhatsAppBot {
               "nova",
               "mp3"
             );
-            
+
             // Enviar áudio via WhatsApp
             await this.sendAudioMessage(fromNumber, audioFilePath);
-            
+
             // Limpeza do arquivo após envio
             setTimeout(() => {
-              this.ttsService.removeFile(audioFilePath).catch(error => {
-                logger.warn('Erro ao limpar arquivo TTS:', error.message);
+              this.ttsService.removeFile(audioFilePath).catch((error) => {
+                logger.warn("Erro ao limpar arquivo TTS:", error.message);
               });
             }, 60000); // 1 minuto
-            
+
             // Ativar preferência de áudio para próximas respostas
             this.audioPreferences.set(fromNumber, {
               preferAudio: true,
               timestamp: Date.now(),
-              lastMessage: ""
+              lastMessage: "",
             });
-            
+
             return;
-            
           } catch (audioError) {
-            logger.error('Erro ao gerar áudio da resposta anterior:', audioError.message);
-            await this.sendMessage(fromNumber, "❌ Erro ao gerar áudio. Desculpe, não consegui converter a resposta anterior em áudio.");
+            logger.error(
+              "Erro ao gerar áudio da resposta anterior:",
+              audioError.message
+            );
+            await this.sendMessage(
+              fromNumber,
+              "❌ Erro ao gerar áudio. Desculpe, não consegui converter a resposta anterior em áudio."
+            );
             return;
           }
         }
-        
+
         // Se não há resposta anterior recente, ativar preferência para próximas respostas
         this.audioPreferences.set(fromNumber, {
           preferAudio: true,
           timestamp: Date.now(),
-          lastMessage: ""
+          lastMessage: "",
         });
-        
+
         await this.sendMessage(
           fromNumber,
           "✅ Entendi que você prefere respostas em áudio! 🎧\n\nAgora faça sua pergunta que eu responderei automaticamente em texto e áudio."
@@ -532,7 +588,7 @@ class WhatsAppBot {
         // Usar voz baseada no contexto emocional ou padrão
         const voice = pendingResponse.voice || "nova";
         logger.info(`🎭 Usando voz "${voice}" baseada no contexto emocional`);
-        
+
         // Gerar áudio usando TTS (mp3 é mais compatível)
         const audioFilePath = await this.ttsService.generateAudio(
           pendingResponse.text,
@@ -612,29 +668,36 @@ class WhatsAppBot {
    */
   formatNumbersForAudio(text) {
     // Valores em reais (R$ 1.200,00 → "mil e duzentos reais")
-    text = text.replace(/R\$\s*(\d{1,3}(?:\.\d{3})*),(\d{2})/g, (match, reais, centavos) => {
-      const valor = parseInt(reais.replace(/\./g, ''));
-      const centavosNum = parseInt(centavos);
-      
-      let valorPorExtenso = this.numberToWords(valor);
-      
-      if (centavosNum > 0) {
-        return `${valorPorExtenso} reais e ${this.numberToWords(centavosNum)} centavos`;
-      } else {
-        return `${valorPorExtenso} reais`;
+    text = text.replace(
+      /R\$\s*(\d{1,3}(?:\.\d{3})*),(\d{2})/g,
+      (match, reais, centavos) => {
+        const valor = parseInt(reais.replace(/\./g, ""));
+        const centavosNum = parseInt(centavos);
+
+        let valorPorExtenso = this.numberToWords(valor);
+
+        if (centavosNum > 0) {
+          return `${valorPorExtenso} reais e ${this.numberToWords(
+            centavosNum
+          )} centavos`;
+        } else {
+          return `${valorPorExtenso} reais`;
+        }
       }
-    });
-    
+    );
+
     // Porcentagens (15% → "quinze por cento")
     text = text.replace(/(\d+)%/g, (match, num) => {
       return `${this.numberToWords(parseInt(num))} por cento`;
     });
-    
+
     // CEP (12345-678 → "CEP doze mil trezentos e quarenta e cinco hífen seiscentos e setenta e oito")
     text = text.replace(/(\d{5})-(\d{3})/g, (match, parte1, parte2) => {
-      return `CEP ${this.numberToWords(parseInt(parte1))} hífen ${this.numberToWords(parseInt(parte2))}`;
+      return `CEP ${this.numberToWords(
+        parseInt(parte1)
+      )} hífen ${this.numberToWords(parseInt(parte2))}`;
     });
-    
+
     return text;
   }
 
@@ -643,23 +706,36 @@ class WhatsAppBot {
    */
   formatDatesForAudio(text) {
     // DD/MM/YYYY → "dez de agosto de dois mil e vinte e cinco"
-    text = text.replace(/(\d{1,2})\/(\d{1,2})\/(\d{4})/g, (match, dia, mes, ano) => {
-      const meses = [
-        'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
-        'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'
-      ];
-      
-      const diaNum = parseInt(dia);
-      const mesNum = parseInt(mes) - 1;
-      const anoNum = parseInt(ano);
-      
-      const diaPorExtenso = this.numberToWords(diaNum);
-      const mesNome = meses[mesNum] || 'mês inválido';
-      const anoPorExtenso = this.numberToWords(anoNum);
-      
-      return `${diaPorExtenso} de ${mesNome} de ${anoPorExtenso}`;
-    });
-    
+    text = text.replace(
+      /(\d{1,2})\/(\d{1,2})\/(\d{4})/g,
+      (match, dia, mes, ano) => {
+        const meses = [
+          "janeiro",
+          "fevereiro",
+          "março",
+          "abril",
+          "maio",
+          "junho",
+          "julho",
+          "agosto",
+          "setembro",
+          "outubro",
+          "novembro",
+          "dezembro",
+        ];
+
+        const diaNum = parseInt(dia);
+        const mesNum = parseInt(mes) - 1;
+        const anoNum = parseInt(ano);
+
+        const diaPorExtenso = this.numberToWords(diaNum);
+        const mesNome = meses[mesNum] || "mês inválido";
+        const anoPorExtenso = this.numberToWords(anoNum);
+
+        return `${diaPorExtenso} de ${mesNome} de ${anoPorExtenso}`;
+      }
+    );
+
     return text;
   }
 
@@ -668,26 +744,26 @@ class WhatsAppBot {
    */
   expandAbbreviationsForAudio(text) {
     const abbreviations = {
-      'IPTU': 'Imposto Predial e Territorial Urbano',
-      'CPF': 'CPF',
-      'CNPJ': 'CNPJ', 
-      'RG': 'RG',
-      'CEP': 'CEP',
-      'ISSQN': 'Imposto Sobre Serviços',
-      'ITBI': 'Imposto de Transmissão de Bens Imóveis',
-      'Dr.': 'Doutor',
-      'Dra.': 'Doutora',
-      'Sr.': 'Senhor',
-      'Sra.': 'Senhora',
-      'Ltda.': 'Limitada',
-      'S.A.': 'Sociedade Anônima'
+      IPTU: "Imposto Predial e Territorial Urbano",
+      CPF: "CPF",
+      CNPJ: "CNPJ",
+      RG: "RG",
+      CEP: "CEP",
+      ISSQN: "Imposto Sobre Serviços",
+      ITBI: "Imposto de Transmissão de Bens Imóveis",
+      "Dr.": "Doutor",
+      "Dra.": "Doutora",
+      "Sr.": "Senhor",
+      "Sra.": "Senhora",
+      "Ltda.": "Limitada",
+      "S.A.": "Sociedade Anônima",
     };
-    
+
     for (const [abbrev, expansion] of Object.entries(abbreviations)) {
-      const regex = new RegExp(`\\b${abbrev}\\b`, 'gi');
+      const regex = new RegExp(`\\b${abbrev}\\b`, "gi");
       text = text.replace(regex, expansion);
     }
-    
+
     return text;
   }
 
@@ -695,67 +771,99 @@ class WhatsAppBot {
    * Converte números para palavras (versão simplificada)
    */
   numberToWords(num) {
-    if (num === 0) return 'zero';
-    if (num === 1) return 'um';
-    if (num === 2) return 'dois';
-    if (num === 3) return 'três';
-    if (num === 4) return 'quatro';
-    if (num === 5) return 'cinco';
-    if (num === 6) return 'seis';
-    if (num === 7) return 'sete';
-    if (num === 8) return 'oito';
-    if (num === 9) return 'nove';
-    if (num === 10) return 'dez';
-    
+    if (num === 0) return "zero";
+    if (num === 1) return "um";
+    if (num === 2) return "dois";
+    if (num === 3) return "três";
+    if (num === 4) return "quatro";
+    if (num === 5) return "cinco";
+    if (num === 6) return "seis";
+    if (num === 7) return "sete";
+    if (num === 8) return "oito";
+    if (num === 9) return "nove";
+    if (num === 10) return "dez";
+
     if (num < 20) {
-      const teens = ['onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
+      const teens = [
+        "onze",
+        "doze",
+        "treze",
+        "quatorze",
+        "quinze",
+        "dezesseis",
+        "dezessete",
+        "dezoito",
+        "dezenove",
+      ];
       return teens[num - 11];
     }
-    
+
     if (num < 100) {
-      const tens = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
+      const tens = [
+        "",
+        "",
+        "vinte",
+        "trinta",
+        "quarenta",
+        "cinquenta",
+        "sessenta",
+        "setenta",
+        "oitenta",
+        "noventa",
+      ];
       const unidade = num % 10;
       const dezena = Math.floor(num / 10);
-      
+
       if (unidade === 0) {
         return tens[dezena];
       } else {
         return `${tens[dezena]} e ${this.numberToWords(unidade)}`;
       }
     }
-    
+
     if (num < 1000) {
-      const centenas = ['', 'cento', 'duzentos', 'trezentos', 'quatrocentos', 'quinhentos', 'seiscentos', 'setecentos', 'oitocentos', 'novecentos'];
+      const centenas = [
+        "",
+        "cento",
+        "duzentos",
+        "trezentos",
+        "quatrocentos",
+        "quinhentos",
+        "seiscentos",
+        "setecentos",
+        "oitocentos",
+        "novecentos",
+      ];
       const centena = Math.floor(num / 100);
       const resto = num % 100;
-      
-      if (num === 100) return 'cem';
-      
+
+      if (num === 100) return "cem";
+
       if (resto === 0) {
         return centenas[centena];
       } else {
         return `${centenas[centena]} e ${this.numberToWords(resto)}`;
       }
     }
-    
+
     if (num < 1000000) {
       const milhares = Math.floor(num / 1000);
       const resto = num % 1000;
-      
-      let result = '';
+
+      let result = "";
       if (milhares === 1) {
-        result = 'mil';
+        result = "mil";
       } else {
         result = `${this.numberToWords(milhares)} mil`;
       }
-      
+
       if (resto > 0) {
         result += ` e ${this.numberToWords(resto)}`;
       }
-      
+
       return result;
     }
-    
+
     // Para números maiores, usar formato simplificado
     return num.toString();
   }
@@ -773,22 +881,25 @@ class WhatsAppBot {
    */
   removeDocumentReferences(text) {
     if (!text) return text;
-    
+
     // Padrão para capturar referências como 【5:5†01 Codigo Tributario de Arapiraca-ATUALIZADO.txt】
     const documentRefPattern = /【[^】]*】/g;
-    
+
     // Guardar as referências para log
     const references = text.match(documentRefPattern) || [];
-    
+
     if (references.length > 0) {
-      logger.info(`📄 Referências de documentos removidas da mensagem do usuário:`, references);
+      logger.info(
+        `📄 Referências de documentos removidas da mensagem do usuário:`,
+        references
+      );
     }
-    
+
     // Remover as referências do texto
-    const cleanText = text.replace(documentRefPattern, '').trim();
-    
+    const cleanText = text.replace(documentRefPattern, "").trim();
+
     // Limpar espaços duplos ou múltiplos que possam ter ficado
-    return cleanText.replace(/\s+/g, ' ').trim();
+    return cleanText.replace(/\s+/g, " ").trim();
   }
 
   /**
@@ -797,33 +908,70 @@ class WhatsAppBot {
   detectEmotionalContext(userMessage, botResponse) {
     const message = userMessage.toLowerCase();
     const response = botResponse.toLowerCase();
-    
+
     // Detectar urgência
-    const urgencyKeywords = ['urgente', 'rápido', 'preciso agora', 'emergência', 'dívida', 'cobrança'];
-    const hasUrgency = urgencyKeywords.some(keyword => message.includes(keyword));
-    
+    const urgencyKeywords = [
+      "urgente",
+      "rápido",
+      "preciso agora",
+      "emergência",
+      "dívida",
+      "cobrança",
+    ];
+    const hasUrgency = urgencyKeywords.some((keyword) =>
+      message.includes(keyword)
+    );
+
     // Detectar frustração
-    const frustrationKeywords = ['não funciona', 'erro', 'problema', 'não consigo', 'difícil'];
-    const hasFrustration = frustrationKeywords.some(keyword => message.includes(keyword));
-    
+    const frustrationKeywords = [
+      "não funciona",
+      "erro",
+      "problema",
+      "não consigo",
+      "difícil",
+    ];
+    const hasFrustration = frustrationKeywords.some((keyword) =>
+      message.includes(keyword)
+    );
+
     // Detectar agradecimento
-    const gratitudeKeywords = ['obrigado', 'obrigada', 'valeu', 'muito bom', 'excelente'];
-    const hasGratitude = gratitudeKeywords.some(keyword => message.includes(keyword));
-    
+    const gratitudeKeywords = [
+      "obrigado",
+      "obrigada",
+      "valeu",
+      "muito bom",
+      "excelente",
+    ];
+    const hasGratitude = gratitudeKeywords.some((keyword) =>
+      message.includes(keyword)
+    );
+
     // Detectar valores altos (possível preocupação)
     const highValuePattern = /R\$\s*(\d{1,3}(?:\.\d{3})*),(\d{2})/g;
     const matches = response.match(highValuePattern);
-    const hasHighValue = matches && matches.some(match => {
-      const value = parseFloat(match.replace(/R\$\s*/, '').replace(/\./g, '').replace(',', '.'));
-      return value > 500; // Valores acima de R$ 500
-    });
-    
+    const hasHighValue =
+      matches &&
+      matches.some((match) => {
+        const value = parseFloat(
+          match
+            .replace(/R\$\s*/, "")
+            .replace(/\./g, "")
+            .replace(",", ".")
+        );
+        return value > 500; // Valores acima de R$ 500
+      });
+
     return {
       hasUrgency,
       hasFrustration,
       hasGratitude,
       hasHighValue,
-      suggestedVoice: this.selectVoiceForContext({ hasUrgency, hasFrustration, hasGratitude, hasHighValue })
+      suggestedVoice: this.selectVoiceForContext({
+        hasUrgency,
+        hasFrustration,
+        hasGratitude,
+        hasHighValue,
+      }),
     };
   }
 
@@ -832,20 +980,20 @@ class WhatsAppBot {
    */
   selectVoiceForContext(context) {
     // Vozes OpenAI disponíveis: alloy, echo, fable, onyx, nova, shimmer
-    
+
     if (context.hasGratitude) {
-      return 'nova'; // Voz mais calorosa para agradecimentos
+      return "nova"; // Voz mais calorosa para agradecimentos
     }
-    
+
     if (context.hasFrustration) {
-      return 'fable'; // Voz mais calma e tranquilizadora
+      return "fable"; // Voz mais calma e tranquilizadora
     }
-    
+
     if (context.hasUrgency || context.hasHighValue) {
-      return 'alloy'; // Voz mais séria e profissional
+      return "alloy"; // Voz mais séria e profissional
     }
-    
-    return 'nova'; // Voz padrão, equilibrada
+
+    return "nova"; // Voz padrão, equilibrada
   }
 
   /**
@@ -853,20 +1001,23 @@ class WhatsAppBot {
    */
   improvePunctuationForAudio(text) {
     // Adicionar pausas após valores monetários
-    text = text.replace(/(reais?)\s+([A-Z])/g, '$1. $2');
-    
+    text = text.replace(/(reais?)\s+([A-Z])/g, "$1. $2");
+
     // Adicionar pausas após datas
-    text = text.replace(/(\d{4})\s+([A-Z])/g, '$1. $2');
-    
+    text = text.replace(/(\d{4})\s+([A-Z])/g, "$1. $2");
+
     // Melhorar pausas em listas
-    text = text.replace(/,\s*([A-Z])/g, ', $1');
-    
+    text = text.replace(/,\s*([A-Z])/g, ", $1");
+
     // Pausas naturais antes de informações importantes
-    text = text.replace(/\b(atenção|importante|lembre-se|observação)\b/gi, '. $1');
-    
+    text = text.replace(
+      /\b(atenção|importante|lembre-se|observação)\b/gi,
+      ". $1"
+    );
+
     // Pausas após cumprimentos
-    text = text.replace(/\b(olá|oi|bom dia|boa tarde|boa noite)\b/gi, '$1,');
-    
+    text = text.replace(/\b(olá|oi|bom dia|boa tarde|boa noite)\b/gi, "$1,");
+
     return text;
   }
 
@@ -876,42 +1027,49 @@ class WhatsAppBot {
   processTextForAudio(text) {
     // 1. Processar números e valores
     text = this.formatNumbersForAudio(text);
-    
+
     // 2. Processar datas
     text = this.formatDatesForAudio(text);
-    
+
     // 3. Expandir abreviações
     text = this.expandAbbreviationsForAudio(text);
-    
+
     // 4. Melhorar pontuação para pausas naturais
     text = this.improvePunctuationForAudio(text);
-    
+
     // 5. Detectar URLs (http, https, www, .com, .br, etc.)
-    const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[^\s]+\.(com|br|org|net|gov|edu)[^\s]*)/gi;
+    const urlRegex =
+      /(https?:\/\/[^\s]+|www\.[^\s]+|[^\s]+\.(com|br|org|net|gov|edu)[^\s]*)/gi;
     const links = text.match(urlRegex) || [];
-    
+
     if (links.length === 0) {
       return { hasLinks: false, audioText: text };
     }
-    
+
     // Se tem muitos links (mais de 2), não oferecer áudio
     if (links.length > 2) {
       return { hasLinks: true, tooManyLinks: true, audioText: null };
     }
-    
+
     // Substituir links por texto mais natural para áudio
     let audioText = text;
     links.forEach((link, index) => {
       if (links.length === 1) {
-        audioText = audioText.replace(link, ", confira o link enviado no texto,");
+        audioText = audioText.replace(
+          link,
+          ", confira o link enviado no texto,"
+        );
       } else {
-        audioText = audioText.replace(link, `, confira o link ${index + 1} no texto,`);
+        audioText = audioText.replace(
+          link,
+          `, confira o link ${index + 1} no texto,`
+        );
       }
     });
-    
+
     // Limpar vírgulas duplas e espaços extras
-    audioText = audioText.replace(/,\s*,/g, ',').replace(/\s+/g, ' ').trim();
-    
+    audioText = audioText.replace(/,\s*,/g, ",").replace(/\s+/g, " ").trim();
+
     return { hasLinks: true, audioText: audioText };
   }
 
@@ -922,83 +1080,103 @@ class WhatsAppBot {
     try {
       // Enviar a resposta principal
       await this.sendMessage(fromNumber, responseText);
-      
+
       // Armazenar a resposta para possível conversão em áudio posterior
       this.lastResponses.set(fromNumber, {
         text: responseText,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
 
       // Verificar se o texto contém links
       const linkAnalysis = this.processTextForAudio(responseText);
-      
+
       // Se tem muitos links, não oferecer áudio
       if (linkAnalysis.tooManyLinks) {
-        logger.info(`🔗 Resposta com muitos links (${linkAnalysis.hasLinks}), pulando oferta de áudio`);
+        logger.info(
+          `🔗 Resposta com muitos links (${linkAnalysis.hasLinks}), pulando oferta de áudio`
+        );
         return;
       }
 
       // Verificar se usuário tem preferência por áudio
       const audioPreference = this.audioPreferences.get(fromNumber);
-      const prefersAudio = audioPreference && 
-                          audioPreference.preferAudio && 
-                          (Date.now() - audioPreference.timestamp) < (60 * 60 * 1000); // 1 hora
-      
+      const prefersAudio =
+        audioPreference &&
+        audioPreference.preferAudio &&
+        Date.now() - audioPreference.timestamp < 60 * 60 * 1000; // 1 hora
+
       if (prefersAudio) {
         // Usuário prefere áudio - gerar automaticamente
-        logger.info(`🎧 Usuário ${fromNumber.substring(0, 10)}... prefere áudio, gerando automaticamente`);
-        
-        await this.sendMessage(fromNumber, "🎧 Gerando áudio automaticamente...");
-        
+        logger.info(
+          `🎧 Usuário ${fromNumber.substring(
+            0,
+            10
+          )}... prefere áudio, gerando automaticamente`
+        );
+
+        await this.sendMessage(
+          fromNumber,
+          "🎧 Gerando áudio automaticamente..."
+        );
+
         try {
           // Usar texto processado para áudio (sem links)
           const textForAudio = linkAnalysis.audioText || responseText;
-          
+
           // Gerar e enviar áudio diretamente
-          const audioFilePath = await this.ttsService.generateAudio(textForAudio, 'nova', 'mp3');
+          const audioFilePath = await this.ttsService.generateAudio(
+            textForAudio,
+            "nova",
+            "mp3"
+          );
           await this.sendAudioMessage(fromNumber, audioFilePath);
-          
+
           // Limpeza do arquivo após envio
           setTimeout(() => {
-            this.ttsService.removeFile(audioFilePath).catch(error => {
-              logger.warn('Erro ao limpar arquivo TTS:', error.message);
+            this.ttsService.removeFile(audioFilePath).catch((error) => {
+              logger.warn("Erro ao limpar arquivo TTS:", error.message);
             });
           }, 60000); // 1 minuto
-          
         } catch (audioError) {
-          logger.error('Erro ao gerar áudio automático:', audioError.message);
-          await this.sendMessage(fromNumber, "❌ Erro ao gerar áudio. Continuando só com texto.");
+          logger.error("Erro ao gerar áudio automático:", audioError.message);
+          await this.sendMessage(
+            fromNumber,
+            "❌ Erro ao gerar áudio. Continuando só com texto."
+          );
         }
-        
       } else {
         // Comportamento normal - perguntar sobre áudio
         // Armazenar resposta para possível conversão em áudio (usando texto processado)
         const textForAudio = linkAnalysis.audioText || responseText;
-        
+
         // Detectar contexto emocional para escolher voz adequada
         const lastMessage = this.getLastUserMessage(fromNumber) || "";
-        const emotionalContext = this.detectEmotionalContext(lastMessage, responseText);
-        
+        const emotionalContext = this.detectEmotionalContext(
+          lastMessage,
+          responseText
+        );
+
         this.pendingAudioRequests.set(fromNumber, {
           text: textForAudio,
           timestamp: Date.now(),
           voice: emotionalContext.suggestedVoice,
-          context: emotionalContext
+          context: emotionalContext,
         });
 
         // Limpar solicitações antigas (mais de 10 minutos)
         this.cleanupPendingAudioRequests();
 
         // Enviar pergunta sobre áudio (com aviso sobre links se necessário)
-        let audioPrompt = "\n🎧 Deseja ouvir essa resposta em áudio? Responda com 'áudio' ou envie um emoji de fone 🎧.";
-        
+        let audioPrompt =
+          "\n🎧 Deseja ouvir essa resposta em áudio? Responda com 'áudio' ou envie um emoji de fone 🎧.";
+
         if (linkAnalysis.hasLinks) {
-          audioPrompt = "\n🎧 Deseja ouvir essa resposta em áudio? (Os links serão mencionados como 'confira o link no texto')";
+          audioPrompt =
+            "\n🎧 Deseja ouvir essa resposta em áudio? (Os links serão mencionados como 'confira o link no texto')";
         }
-        
+
         await this.sendMessage(fromNumber, audioPrompt);
       }
-      
     } catch (error) {
       logger.error(
         "Erro ao enviar mensagem com prompt de áudio:",
@@ -1175,7 +1353,7 @@ class WhatsAppBot {
         this.pendingAudioRequests.delete(userId);
       }
     }
-    
+
     // Limpar também preferências de áudio antigas (mais de 1 hora)
     const prefMaxAge = 60 * 60 * 1000; // 1 hora
     for (const [userId, data] of this.audioPreferences.entries()) {
@@ -1183,7 +1361,7 @@ class WhatsAppBot {
         this.audioPreferences.delete(userId);
       }
     }
-    
+
     // Limpar respostas antigas (mais de 5 minutos)
     const responseMaxAge = 5 * 60 * 1000; // 5 minutos
     for (const [userId, data] of this.lastResponses.entries()) {
@@ -1198,15 +1376,17 @@ class WhatsAppBot {
    */
   async sendWelcomeMessage(fromNumber) {
     try {
-      const welcomeMessage = 
+      const welcomeMessage =
         "Olá! Sou a assistente virtual da Secretaria Municipal da Fazenda de Arapiraca-AL 🏛️\n\n" +
         "💬 Você pode me enviar mensagens de *texto ou áudio*\n" +
         "🎧 Posso responder em *texto e áudio* (sempre pergunto se deseja ouvir)\n" +
         "📋 Consulto vínculos, débitos e orientações tributárias municipais\n\n" +
         "⚠️ Este sistema está em fase de testes. Como posso ajudá-lo hoje?";
-      
+
       await this.sendMessage(fromNumber, welcomeMessage);
-      logger.info(`Mensagem de boas-vindas enviada para ${fromNumber.substring(0, 10)}...`);
+      logger.info(
+        `Mensagem de boas-vindas enviada para ${fromNumber.substring(0, 10)}...`
+      );
     } catch (error) {
       logger.error("Erro ao enviar mensagem de boas-vindas:", error.message);
       // Não lançar erro para não interromper o fluxo principal
@@ -1246,16 +1426,24 @@ class WhatsAppBot {
 
         // Limpeza de solicitações de áudio antigas
         this.cleanupPendingAudioRequests();
-        
+
         // Limpeza de threads OpenAI antigas/problemáticas
         const cleanedThreads = this.openaiService.cleanupThreads();
         if (cleanedThreads > 0) {
-          logger.info(`🧹 ${cleanedThreads} threads OpenAI limpas automaticamente`);
+          logger.info(
+            `🧹 ${cleanedThreads} threads OpenAI limpas automaticamente`
+          );
         }
-        
+
         // Log de estatísticas das threads (a cada hora)
         const threadStats = this.openaiService.getThreadStats();
-        logger.info(`📊 Threads ativas: ${threadStats.totalThreads}, Detalhes: ${JSON.stringify(threadStats.threadDetails.slice(0, 3))}...`);
+        logger.info(
+          `📊 Threads ativas: ${
+            threadStats.totalThreads
+          }, Detalhes: ${JSON.stringify(
+            threadStats.threadDetails.slice(0, 3)
+          )}...`
+        );
       }, 30 * 60 * 1000); // 30 minutos
 
       logger.info(
