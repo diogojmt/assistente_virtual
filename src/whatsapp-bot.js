@@ -38,7 +38,7 @@ class WhatsAppBot {
         "auth_info_baileys"
       );
 
-      // Criar socket
+      // Criar socket com configurações otimizadas para estabilidade
       this.sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
@@ -46,10 +46,17 @@ class WhatsAppBot {
         browser: Browsers.macOS("Desktop"),
         defaultQueryTimeoutMs: 60000,
         connectTimeoutMs: 60000,
-        keepAliveIntervalMs: 30000,
+        keepAliveIntervalMs: 25000,
         markOnlineOnConnect: true,
         syncFullHistory: false,
         generateHighQualityLinkPreview: false,
+        // Configurações adicionais para estabilidade
+        retryRequestDelayMs: 250,
+        maxMsgRetryCount: 5,
+        msgRetryCounterCache: 100,
+        // Reduzir queries que podem causar bad-request
+        emitOwnEvents: false,
+        getMessage: async () => undefined,
       });
 
       // Event listeners
@@ -79,6 +86,11 @@ class WhatsAppBot {
     // Monitorar status de entrega das mensagens
     this.sock.ev.on("message-receipt.update", (receipt) => {
       this.handleMessageReceipt(receipt);
+    });
+
+    // Tratar problemas de re-envio (phash)
+    this.sock.ev.on("messages.update", (updates) => {
+      this.handleMessageUpdates(updates);
     });
   }
 
@@ -129,6 +141,13 @@ class WhatsAppBot {
       }
     } else if (connection === "open") {
       logger.info("Bot conectado ao WhatsApp com sucesso!");
+      
+      // Aguardar um pouco antes de considerar totalmente conectado
+      // Isso ajuda a evitar erros de bad-request nas queries iniciais
+      setTimeout(() => {
+        logger.info("🟢 Bot totalmente operacional - pronto para receber mensagens");
+      }, 3000);
+      
     } else if (connection === "connecting") {
       logger.info("Conectando ao WhatsApp...");
     }
@@ -1561,6 +1580,62 @@ class WhatsAppBot {
   }
 
   /**
+   * Trata atualizações de mensagens (incluindo problemas de phash/resend)
+   */
+  handleMessageUpdates(updates) {
+    try {
+      for (const update of updates) {
+        const messageId = update.key?.id;
+        const userJid = update.key?.remoteJid;
+        
+        if (messageId && userJid) {
+          // Detectar problemas de entrega
+          if (update.update?.status === 'PENDING' || update.update?.messageStubType) {
+            const deviceInfo = this.deviceInfo.get(userJid);
+            const deviceType = deviceInfo?.isIOS ? 'iOS' : 'Android/Other';
+            
+            logger.warn(`⚠️ Problema de entrega detectado [${deviceType}]: ${messageId.substring(0, 8)}...`);
+            
+            // Se for iOS e tiver problemas repetidos, marcar para investigação
+            if (deviceInfo?.isIOS) {
+              const problemCount = (deviceInfo.deliveryProblems || 0) + 1;
+              this.deviceInfo.set(userJid, {
+                ...deviceInfo,
+                deliveryProblems: problemCount,
+                lastProblem: Date.now()
+              });
+              
+              if (problemCount >= 3) {
+                logger.warn(`🚨 Usuário iOS com ${problemCount} problemas de entrega consecutivos: ${userJid.substring(0, 15)}...`);
+              }
+            }
+          }
+          
+          // Atualizar status de entrega
+          if (update.update?.status === 'SERVER_ACK' || update.update?.status === 'DELIVERY_ACK') {
+            this.deliveryStatus.set(messageId, {
+              userJid,
+              status: 'delivered',
+              timestamp: Date.now()
+            });
+            
+            const deviceInfo = this.deviceInfo.get(userJid);
+            if (deviceInfo?.deliveryProblems) {
+              // Reset contador de problemas quando mensagem é entregue com sucesso
+              this.deviceInfo.set(userJid, {
+                ...deviceInfo,
+                deliveryProblems: 0
+              });
+            }
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn("Erro ao processar atualizações de mensagens:", error.message);
+    }
+  }
+
+  /**
    * Verifica se é uma mensagem importante (áudio, por exemplo)
    */
   isImportantMessage(messageId) {
@@ -1570,7 +1645,7 @@ class WhatsAppBot {
   }
 
   /**
-   * Envia mensagem com retry automático para iOS
+   * Envia mensagem com retry automático e tratamento de phash
    */
   async sendMessage(to, text) {
     const maxRetries = 3;
@@ -1578,13 +1653,30 @@ class WhatsAppBot {
     
     while (attempt < maxRetries) {
       try {
-        const messageResponse = await this.sock.sendMessage(to, { text });
+        // Configurações específicas para evitar problemas de entrega
+        const messageOptions = {
+          text,
+          // Configurações adicionais para estabilidade
+          ephemeralExpiration: 0,
+          messageTag: Date.now().toString()
+        };
+
+        const messageResponse = await this.sock.sendMessage(to, messageOptions);
         
+        // Verificar se mensagem foi enviada com sucesso
+        if (!messageResponse || !messageResponse.key || !messageResponse.key.id) {
+          throw new Error("Resposta de mensagem inválida - sem ID");
+        }
+
         // Monitorar entrega especialmente para iOS
         const deviceInfo = this.deviceInfo.get(to);
-        if (deviceInfo?.isIOS && messageResponse?.key?.id) {
+        if (deviceInfo?.isIOS && messageResponse.key.id) {
           this.trackMessageDelivery(messageResponse.key.id, to, 'text');
         }
+
+        // Log de sucesso com mais detalhes
+        const deviceType = deviceInfo?.isIOS ? 'iOS' : 'Android/Other';
+        logger.info(`✅ Mensagem enviada [${deviceType}]: ${messageResponse.key.id.substring(0, 8)}...`);
         
         return messageResponse;
       } catch (error) {
