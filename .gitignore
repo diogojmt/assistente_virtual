@@ -22,6 +22,7 @@ logs
 
 # WhatsApp session data
 baileys_store*
+baileys_auth/
 auth_info_baileys/
 
 # OS generated files

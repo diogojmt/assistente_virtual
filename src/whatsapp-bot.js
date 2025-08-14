@@ -2,6 +2,8 @@ const {
   default: makeWASocket, 
   DisconnectReason, 
   useMultiFileAuthState,
+  makeCacheableSignalKeyStore,
+  fetchLatestBaileysVersion,
   Browsers
 } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
@@ -18,12 +20,20 @@ class WhatsAppBot {
     try {
       logger.info('Inicializando bot do WhatsApp...');
       
-      // Configurar autenticação
-      const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+      // Obter versão mais recente do Baileys
+      const { version, isLatest } = await fetchLatestBaileysVersion();
+      logger.info(`Versão Baileys: ${version}, Latest: ${isLatest}`);
       
-      // Criar socket
+      // Configurar autenticação
+      const { state, saveCreds } = await useMultiFileAuthState('./baileys_auth');
+      
+      // Criar socket com configurações otimizadas
       this.sock = makeWASocket({
-        auth: state,
+        version,
+        auth: {
+          creds: state.creds,
+          keys: makeCacheableSignalKeyStore(state.keys, logger.child({ module: 'keys' }))
+        },
         printQRInTerminal: false,
         logger: logger.child({ module: 'baileys' }),
         browser: Browsers.macOS('Desktop'),
@@ -32,6 +42,7 @@ class WhatsAppBot {
         keepAliveIntervalMs: 30000,
         markOnlineOnConnect: true,
         syncFullHistory: false,
+        shouldSyncHistoryMessage: () => false,
         generateHighQualityLinkPreview: false
       });
 
@@ -87,7 +98,7 @@ class WhatsAppBot {
         logger.info('Tentando reconectar em 5 segundos...');
         setTimeout(() => this.initialize(), 5000);
       } else if (statusCode === 401 || statusCode === DisconnectReason.loggedOut) {
-        logger.info('Sessão expirada. Delete a pasta auth_info_baileys e reinicie o bot para gerar novo QR.');
+        logger.info('Sessão expirada. Delete a pasta baileys_auth e reinicie o bot para gerar novo QR.');
       } else if (shouldReconnect) {
         logger.info('Tentando reconectar em 10 segundos...');
         setTimeout(() => this.initialize(), 10000);
