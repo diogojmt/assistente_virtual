@@ -18,6 +18,7 @@ Para que o Assistant possa utilizar as funcionalidades de consulta de débitos e
 **Descrição:** Consulta vínculos de imóveis e empresas vinculados a um CPF ou CNPJ
 
 **Schema JSON:**
+
 ```json
 {
   "type": "function",
@@ -47,6 +48,7 @@ Para que o Assistant possa utilizar as funcionalidades de consulta de débitos e
 **Descrição:** Consulta débitos municipais por inscrição e tipo de contribuinte
 
 **Schema JSON:**
+
 ```json
 {
   "type": "function",
@@ -86,6 +88,7 @@ Para que o Assistant possa utilizar as funcionalidades de consulta de débitos e
 **Descrição:** Encerra cordialmente o atendimento e limpa a sessão do usuário
 
 **Schema JSON:**
+
 ```json
 {
   "type": "function",
@@ -141,7 +144,7 @@ COMO USAR AS FERRAMENTAS:
 
 TRATAMENTO DE GRANDES VOLUMES:
 - Imóveis: Limitado a 10 por consulta
-- Empresas: Limitado a 10 por consulta  
+- Empresas: Limitado a 10 por consulta
 - Débitos: Limitado a 5 detalhados por consulta
 - Sempre informe o total encontrado
 - Oriente para a Secretaria em casos de muitos resultados
@@ -155,7 +158,7 @@ FLUXO TÍPICO:
 
 IMPORTANTE:
 - Sempre seja educado e claro
-- Explique os processos quando necessário
+- Explique os processos quando necessário.
 - Em caso de erro, oriente a procurar a Secretaria
 - CPF/CNPJ devem ter apenas números (sem pontos/traços)
 - Quando detectar encerramento, use encerrar_atendimento ANTES de responder
@@ -167,11 +170,13 @@ IMPORTANTE:
 ## ✅ Após Configurar
 
 1. Teste com mensagens como:
+
    - "Quero ver meus débitos"
    - "Consultar vínculos do CPF 12345678901"
    - "Débitos do imóvel 123456"
 
 2. O Assistant deve:
+
    - Solicitar CPF/CNPJ quando necessário
    - Usar as funções automaticamente
    - Retornar respostas formatadas
