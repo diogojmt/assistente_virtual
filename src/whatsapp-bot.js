@@ -24,6 +24,9 @@ class WhatsAppBot {
     this.lastUserMessages = new Map(); // Armazena últimas mensagens para contexto emocional
     this.lastResponses = new Map(); // Armazena últimas respostas enviadas para conversão em áudio
     this.firstTimeUsers = new Set(); // Controla primeira interação dos usuários
+    this.deviceInfo = new Map(); // Armazena informações do dispositivo do usuário
+    this.messageRetryQueue = new Map(); // Queue para retry de mensagens falhadas
+    this.deliveryStatus = new Map(); // Status de entrega das mensagens
   }
 
   async initialize() {
@@ -71,6 +74,11 @@ class WhatsAppBot {
     // Mensagens
     this.sock.ev.on("messages.upsert", async (messageUpdate) => {
       await this.handleIncomingMessages(messageUpdate);
+    });
+
+    // Monitorar status de entrega das mensagens
+    this.sock.ev.on("message-receipt.update", (receipt) => {
+      this.handleMessageReceipt(receipt);
     });
   }
 
@@ -150,6 +158,9 @@ class WhatsAppBot {
 
       const fromNumber = message.key.remoteJid;
       const senderName = message.pushName || "Usuário";
+
+      // Detectar informações do dispositivo do usuário
+      this.detectDeviceInfo(message, fromNumber);
 
       // Verificar se é mensagem de áudio
       const audioMessage = message.message?.audioMessage;
@@ -1123,11 +1134,15 @@ class WhatsAppBot {
           // Usar texto processado para áudio (sem links)
           const textForAudio = linkAnalysis.audioText || responseText;
 
+          // Detectar se é iOS para usar formato específico
+          const deviceInfo = this.deviceInfo.get(fromNumber);
+          const audioFormat = deviceInfo?.isIOS ? "aac" : "mp3";
+
           // Gerar e enviar áudio diretamente
           const audioFilePath = await this.ttsService.generateAudio(
             textForAudio,
             "nova",
-            "mp3"
+            audioFormat
           );
           await this.sendAudioMessage(fromNumber, audioFilePath);
 
@@ -1187,157 +1202,211 @@ class WhatsAppBot {
   }
 
   /**
-   * Envia mensagem de áudio via WhatsApp
+   * Envia mensagem de áudio via WhatsApp com otimizações para iOS
    */
   async sendAudioMessage(to, audioFilePath) {
-    try {
-      const fs = require("fs-extra");
-      const path = require("path");
-
-      if (!(await fs.pathExists(audioFilePath))) {
-        throw new Error("Arquivo de áudio não encontrado");
-      }
-
-      // Verificar tamanho do arquivo (limite menor no Replit)
-      const stats = await fs.stat(audioFilePath);
-      const maxSize =
-        process.env.NODE_ENV === "production"
-          ? 3 * 1024 * 1024
-          : 16 * 1024 * 1024; // 3MB no Replit
-      if (stats.size > maxSize) {
-        throw new Error(
-          `Arquivo de áudio muito grande (máximo ${Math.round(
-            maxSize / 1024 / 1024
-          )}MB no Replit)`
-        );
-      }
-
-      // Ler arquivo de áudio
-      const audioBuffer = await fs.readFile(audioFilePath);
-
-      // Determinar mimetype baseado na extensão
-      const fileExtension = path.extname(audioFilePath).toLowerCase();
-      let mimetype = "audio/mpeg"; // Default para MP3
-
-      switch (fileExtension) {
-        case ".mp3":
-          mimetype = "audio/mpeg";
-          break;
-        case ".mp4":
-          mimetype = "audio/mp4";
-          break;
-        case ".opus":
-          mimetype = "audio/opus";
-          break;
-        case ".ogg":
-          mimetype = "audio/ogg";
-          break;
-        case ".aac":
-          mimetype = "audio/aac";
-          break;
-        case ".flac":
-          mimetype = "audio/flac";
-          break;
-      }
-
-      logger.info(
-        `📤 Enviando áudio: ${path.basename(audioFilePath)} (${(
-          stats.size / 1024
-        ).toFixed(1)}KB, ${mimetype})`
-      );
-
-      // Tentar múltiplas abordagens de envio
-      let messageResponse;
-
+    const maxRetries = 3;
+    let attempt = 0;
+    
+    while (attempt < maxRetries) {
       try {
-        // Abordagem 1: Envio direto como PTT (nota de voz) - otimizado para Replit
-        const audioPayload = {
-          audio: audioBuffer,
-          mimetype: mimetype,
-          ptt: true,
-        };
+        const fs = require("fs-extra");
+        const path = require("path");
 
-        // No Replit, adicionar configurações extras para estabilidade
-        if (process.env.NODE_ENV === "production") {
-          audioPayload.quoted = null; // Remover referências desnecessárias
+        if (!(await fs.pathExists(audioFilePath))) {
+          throw new Error("Arquivo de áudio não encontrado");
         }
 
-        messageResponse = await this.sock.sendMessage(to, audioPayload);
+        // Verificar tamanho do arquivo (limite menor no Replit)
+        const stats = await fs.stat(audioFilePath);
+        const maxSize =
+          process.env.NODE_ENV === "production"
+            ? 3 * 1024 * 1024
+            : 16 * 1024 * 1024; // 3MB no Replit
+        if (stats.size > maxSize) {
+          throw new Error(
+            `Arquivo de áudio muito grande (máximo ${Math.round(
+              maxSize / 1024 / 1024
+            )}MB no Replit)`
+          );
+        }
 
+        // Ler arquivo de áudio
+        const audioBuffer = await fs.readFile(audioFilePath);
+
+        // Detectar dispositivo para otimizar envio
+        const deviceInfo = this.deviceInfo.get(to);
+        const isIOS = deviceInfo?.isIOS || false;
+
+        // Determinar mimetype baseado na extensão e dispositivo
+        const fileExtension = path.extname(audioFilePath).toLowerCase();
+        let mimetype = "audio/mpeg"; // Default para MP3
+
+        switch (fileExtension) {
+          case ".mp3":
+            mimetype = "audio/mpeg";
+            break;
+          case ".mp4":
+            mimetype = "audio/mp4";
+            break;
+          case ".opus":
+            mimetype = "audio/opus";
+            break;
+          case ".ogg":
+            mimetype = "audio/ogg";
+            break;
+          case ".aac":
+            mimetype = "audio/aac";
+            break;
+          case ".flac":
+            mimetype = "audio/flac";
+            break;
+        }
+
+        const deviceType = isIOS ? 'iOS' : 'Android/Other';
         logger.info(
-          `✅ Áudio enviado como PTT - ID: ${messageResponse?.key?.id}`
-        );
-      } catch (pttError) {
-        logger.warn(
-          "❌ Falha no envio PTT, tentando como áudio normal:",
-          pttError.message
+          `📤 Enviando áudio para ${deviceType}: ${path.basename(audioFilePath)} (${(
+            stats.size / 1024
+          ).toFixed(1)}KB, ${mimetype})`
         );
 
-        // Abordagem 2: Envio como áudio normal (sem PTT)
-        try {
-          messageResponse = await this.sock.sendMessage(to, {
-            audio: audioBuffer,
-            mimetype: mimetype,
-            ptt: false,
-            fileName: `audio_tts${fileExtension}`,
-          });
-
-          logger.info(
-            `✅ Áudio enviado como arquivo - ID: ${messageResponse?.key?.id}`
-          );
-        } catch (normalError) {
-          logger.warn(
-            "❌ Falha no envio normal, tentando como caminho direto (Replit):",
-            normalError.message
-          );
-
-          // Abordagem 3: Replit específica - envio via caminho do arquivo
+        // Estratégia de envio otimizada para iOS
+        let messageResponse;
+        
+        if (isIOS) {
+          // Estratégia específica para iOS
           try {
-            messageResponse = await this.sock.sendMessage(to, {
-              audio: audioFilePath, // Passar caminho direto em vez de buffer
-              mimetype: "audio/mpeg",
+            // iOS funciona melhor com PTT e configurações específicas
+            const audioPayload = {
+              audio: audioBuffer,
+              mimetype: mimetype,
               ptt: true,
-            });
+            };
 
+            messageResponse = await this.sock.sendMessage(to, audioPayload);
+            
             logger.info(
-              `✅ Áudio enviado via caminho direto - ID: ${messageResponse?.key?.id}`
+              `✅ Áudio enviado para iOS como PTT - ID: ${messageResponse?.key?.id}`
             );
-          } catch (pathError) {
-            logger.warn(
-              "❌ Falha no envio via caminho, tentando MP3 mínimo:",
-              pathError.message
-            );
-
-            // Abordagem 4: Configuração mínima como último recurso
-            if (fileExtension !== ".mp3") {
-              throw new Error(
-                "Falha no envio de áudio - formato não suportado no Replit"
-              );
+          } catch (iosError) {
+            // Fallback específico para iOS: usar formato AAC direto
+            if (fileExtension !== '.aac') {
+              throw new Error("iOS requer formato AAC para fallback");
             }
-
+            
             messageResponse = await this.sock.sendMessage(to, {
               audio: audioBuffer,
-              mimetype: "audio/mpeg",
-              ptt: true,
+              mimetype: "audio/aac",
+              ptt: false,
+              fileName: `audio_tts.aac`,
             });
-
+            
             logger.info(
-              `✅ Áudio enviado como MP3 básico - ID: ${messageResponse?.key?.id}`
+              `✅ Áudio AAC enviado para iOS como arquivo - ID: ${messageResponse?.key?.id}`
             );
           }
+        } else {
+          // Estratégia padrão para Android/Other
+          try {
+            // Abordagem 1: Envio direto como PTT
+            const audioPayload = {
+              audio: audioBuffer,
+              mimetype: mimetype,
+              ptt: true,
+            };
+
+            // No Replit, adicionar configurações extras para estabilidade
+            if (process.env.NODE_ENV === "production") {
+              audioPayload.quoted = null; // Remover referências desnecessárias
+            }
+
+            messageResponse = await this.sock.sendMessage(to, audioPayload);
+
+            logger.info(
+              `✅ Áudio enviado como PTT - ID: ${messageResponse?.key?.id}`
+            );
+          } catch (pttError) {
+            logger.warn(
+              "❌ Falha no envio PTT, tentando como áudio normal:",
+              pttError.message
+            );
+
+            // Abordagem 2: Envio como áudio normal (sem PTT)
+            try {
+              messageResponse = await this.sock.sendMessage(to, {
+                audio: audioBuffer,
+                mimetype: mimetype,
+                ptt: false,
+                fileName: `audio_tts${fileExtension}`,
+              });
+
+              logger.info(
+                `✅ Áudio enviado como arquivo - ID: ${messageResponse?.key?.id}`
+              );
+            } catch (normalError) {
+              logger.warn(
+                "❌ Falha no envio normal, tentando como caminho direto (Replit):",
+                normalError.message
+              );
+
+              // Abordagem 3: Replit específica - envio via caminho do arquivo
+              try {
+                messageResponse = await this.sock.sendMessage(to, {
+                  audio: audioFilePath, // Passar caminho direto em vez de buffer
+                  mimetype: "audio/mpeg",
+                  ptt: true,
+                });
+
+                logger.info(
+                  `✅ Áudio enviado via caminho direto - ID: ${messageResponse?.key?.id}`
+                );
+              } catch (pathError) {
+                logger.warn(
+                  "❌ Falha no envio via caminho, tentando MP3 mínimo:",
+                  pathError.message
+                );
+
+                // Abordagem 4: Configuração mínima como último recurso
+                messageResponse = await this.sock.sendMessage(to, {
+                  audio: audioBuffer,
+                  mimetype: "audio/mpeg",
+                  ptt: true,
+                });
+
+                logger.info(
+                  `✅ Áudio enviado como MP3 básico - ID: ${messageResponse?.key?.id}`
+                );
+              }
+            }
+          }
         }
-      }
 
-      // Verificar se a mensagem foi realmente enviada
-      if (!messageResponse || !messageResponse.key) {
-        throw new Error("Falha na confirmação de envio do áudio");
-      }
+        // Verificar se a mensagem foi realmente enviada
+        if (!messageResponse || !messageResponse.key) {
+          throw new Error("Falha na confirmação de envio do áudio");
+        }
 
-      return messageResponse;
-    } catch (error) {
-      logger.error("❌ Erro crítico ao enviar áudio:", error.message);
-      logger.error("Stack trace:", error.stack);
-      throw error;
+        // Rastrear entrega especialmente para iOS
+        if (messageResponse.key.id) {
+          this.trackMessageDelivery(messageResponse.key.id, to, 'audio');
+        }
+
+        return messageResponse;
+      } catch (error) {
+        attempt++;
+        const deviceType = isIOS ? 'iOS' : 'Android/Other';
+        
+        logger.warn(`❌ Falha no envio de áudio para ${deviceType} (tentativa ${attempt}/${maxRetries}):`, error.message);
+        
+        if (attempt >= maxRetries) {
+          logger.error(`❌ Falha definitiva no envio de áudio para ${deviceType} após ${maxRetries} tentativas`);
+          throw error;
+        }
+        
+        // Delay progressivo entre tentativas (maior para iOS)
+        const delay = isIOS ? attempt * 3000 : attempt * 1500;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
   }
 
@@ -1369,6 +1438,22 @@ class WhatsAppBot {
         this.lastResponses.delete(userId);
       }
     }
+
+    // Limpar informações de dispositivo antigas (mais de 24 horas)
+    const deviceMaxAge = 24 * 60 * 60 * 1000; // 24 horas
+    for (const [userId, data] of this.deviceInfo.entries()) {
+      if (now - data.lastDetection > deviceMaxAge) {
+        this.deviceInfo.delete(userId);
+      }
+    }
+
+    // Limpar status de entrega antigas (mais de 1 hora)
+    const deliveryMaxAge = 60 * 60 * 1000; // 1 hora
+    for (const [messageId, data] of this.deliveryStatus.entries()) {
+      if (now - data.timestamp > deliveryMaxAge) {
+        this.deliveryStatus.delete(messageId);
+      }
+    }
   }
 
   /**
@@ -1393,13 +1478,156 @@ class WhatsAppBot {
     }
   }
 
-  async sendMessage(to, text) {
+  /**
+   * Detecta informações do dispositivo do usuário
+   */
+  detectDeviceInfo(message, fromNumber) {
     try {
-      await this.sock.sendMessage(to, { text });
+      // Detectar iOS/iPhone através de características da mensagem
+      const isIOS = this.detectIOSDevice(message);
+      
+      // Armazenar informação do dispositivo
+      const existingInfo = this.deviceInfo.get(fromNumber) || {};
+      this.deviceInfo.set(fromNumber, {
+        ...existingInfo,
+        isIOS,
+        lastDetection: Date.now(),
+        messageCount: (existingInfo.messageCount || 0) + 1
+      });
+
+      if (isIOS && !existingInfo.isIOS) {
+        logger.info(`📱 Usuário ${fromNumber.substring(0, 10)}... detectado como iOS/iPhone`);
+      }
     } catch (error) {
-      logger.error("Erro ao enviar mensagem:", error.message);
-      throw error;
+      logger.warn("Erro na detecção de dispositivo:", error.message);
     }
+  }
+
+  /**
+   * Detecta se o usuário está usando iOS/iPhone
+   */
+  detectIOSDevice(message) {
+    try {
+      // Características que indicam iOS
+      const messageMetadata = message.message?.messageMetadata;
+      const deviceInfo = message.deviceInfo;
+      
+      // Verificar características específicas do iOS no WhatsApp
+      if (messageMetadata?.deviceListMetadata) {
+        return true; // Característica comum em iPhones
+      }
+      
+      // Verificar User-Agent ou características do cliente
+      if (message.message?.conversation && message.message.conversation.includes('iPhone')) {
+        return true;
+      }
+      
+      // Outros indicadores iOS (baseado em experiência com Baileys)
+      const hasIOSChars = message.pushName && /[\uD83C-\uDBFF\uDC00-\uDFFF]+/.test(message.pushName);
+      
+      return hasIOSChars;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * Monitora status de entrega das mensagens
+   */
+  handleMessageReceipt(receipt) {
+    try {
+      const messageId = receipt.key?.id;
+      const userJid = receipt.key?.remoteJid;
+      const receiptType = receipt.receipt?.receiptTimestamp ? 'delivered' : 'sent';
+      
+      if (messageId && userJid) {
+        this.deliveryStatus.set(messageId, {
+          userJid,
+          status: receiptType,
+          timestamp: Date.now()
+        });
+        
+        // Log apenas para áudios ou mensagens importantes
+        const isImportantMessage = this.isImportantMessage(messageId);
+        if (isImportantMessage) {
+          const deviceInfo = this.deviceInfo.get(userJid);
+          const deviceType = deviceInfo?.isIOS ? 'iOS' : 'Android/Other';
+          logger.info(`📨 Mensagem ${receiptType} [${deviceType}]: ${messageId.substring(0, 8)}...`);
+        }
+      }
+    } catch (error) {
+      logger.warn("Erro ao processar receipt:", error.message);
+    }
+  }
+
+  /**
+   * Verifica se é uma mensagem importante (áudio, por exemplo)
+   */
+  isImportantMessage(messageId) {
+    // Por simplicidade, considerar importantes mensagens dos últimos 5 minutos
+    // Em uma implementação mais robusta, isso seria baseado no tipo real da mensagem
+    return true; // Para debug, logar todas por enquanto
+  }
+
+  /**
+   * Envia mensagem com retry automático para iOS
+   */
+  async sendMessage(to, text) {
+    const maxRetries = 3;
+    let attempt = 0;
+    
+    while (attempt < maxRetries) {
+      try {
+        const messageResponse = await this.sock.sendMessage(to, { text });
+        
+        // Monitorar entrega especialmente para iOS
+        const deviceInfo = this.deviceInfo.get(to);
+        if (deviceInfo?.isIOS && messageResponse?.key?.id) {
+          this.trackMessageDelivery(messageResponse.key.id, to, 'text');
+        }
+        
+        return messageResponse;
+      } catch (error) {
+        attempt++;
+        const deviceInfo = this.deviceInfo.get(to);
+        const deviceType = deviceInfo?.isIOS ? 'iOS' : 'Android/Other';
+        
+        logger.warn(`❌ Falha no envio para ${deviceType} (tentativa ${attempt}/${maxRetries}):`, error.message);
+        
+        if (attempt >= maxRetries) {
+          logger.error(`❌ Falha definitiva no envio para ${deviceType} após ${maxRetries} tentativas`);
+          throw error;
+        }
+        
+        // Delay progressivo entre tentativas (especialmente importante para iOS)
+        const delay = deviceInfo?.isIOS ? attempt * 2000 : attempt * 1000;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  /**
+   * Rastreia entrega de mensagem
+   */
+  trackMessageDelivery(messageId, userJid, messageType) {
+    const timeout = setTimeout(() => {
+      const deliveryInfo = this.deliveryStatus.get(messageId);
+      if (!deliveryInfo || deliveryInfo.status !== 'delivered') {
+        const deviceInfo = this.deviceInfo.get(userJid);
+        const deviceType = deviceInfo?.isIOS ? 'iOS' : 'Android/Other';
+        logger.warn(`⚠️ Mensagem ${messageType} não entregue após timeout [${deviceType}]: ${messageId.substring(0, 8)}...`);
+      }
+    }, 30000); // 30 segundos timeout
+    
+    // Limpar timeout se mensagem for entregue
+    const originalSet = this.deliveryStatus.set.bind(this.deliveryStatus);
+    this.deliveryStatus.set = (key, value) => {
+      const result = originalSet(key, value);
+      if (key === messageId && value.status === 'delivered') {
+        clearTimeout(timeout);
+      }
+      return result;
+    };
   }
 
   async start() {
