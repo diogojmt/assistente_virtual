@@ -27,6 +27,8 @@ class WhatsAppBot {
     this.deviceInfo = new Map(); // Armazena informações do dispositivo do usuário
     this.messageRetryQueue = new Map(); // Queue para retry de mensagens falhadas
     this.deliveryStatus = new Map(); // Status de entrega das mensagens
+    this.processedMessages = new Map(); // Cache para evitar processar mensagens duplicadas
+    this.messageCache = new Map(); // Cache para rastrear mensagens enviadas
   }
 
   async initialize() {
@@ -177,6 +179,17 @@ class WhatsAppBot {
 
       const fromNumber = message.key.remoteJid;
       const senderName = message.pushName || "Usuário";
+      const messageId = message.key.id;
+
+      // Verificar se já processamos esta mensagem (evitar duplicatas)
+      const messageHash = `${fromNumber}_${messageId}_${message.messageTimestamp}`;
+      if (this.processedMessages.has(messageHash)) {
+        logger.debug(`⏭️ Mensagem já processada, ignorando: ${messageId?.substring(0, 8)}...`);
+        return;
+      }
+      
+      // Marcar mensagem como processada
+      this.processedMessages.set(messageHash, Date.now());
 
       // Detectar informações do dispositivo do usuário
       this.detectDeviceInfo(message, fromNumber);
@@ -198,6 +211,11 @@ class WhatsAppBot {
       logger.info(
         `Mensagem recebida de ${senderName} (${fromNumber}): "${messageText}"`
       );
+
+      // Verificar comandos especiais para detecção manual de dispositivo
+      if (this.handleDeviceDetectionCommands(messageText, fromNumber)) {
+        return; // Comando processado, não prosseguir com processamento normal
+      }
 
       // Processar mensagem de texto
       await this.processTextMessage(messageText, fromNumber, senderName);
@@ -1473,6 +1491,22 @@ class WhatsAppBot {
         this.deliveryStatus.delete(messageId);
       }
     }
+
+    // Limpar cache de mensagens processadas (mais de 30 minutos)
+    const processedMaxAge = 30 * 60 * 1000; // 30 minutos
+    for (const [messageHash, timestamp] of this.processedMessages.entries()) {
+      if (now - timestamp > processedMaxAge) {
+        this.processedMessages.delete(messageHash);
+      }
+    }
+
+    // Limpar cache de mensagens enviadas (mais de 2 horas)
+    const sentMaxAge = 2 * 60 * 60 * 1000; // 2 horas
+    for (const [messageKey, timestamp] of this.messageCache.entries()) {
+      if (now - timestamp > sentMaxAge) {
+        this.messageCache.delete(messageKey);
+      }
+    }
   }
 
   /**
@@ -1498,23 +1532,104 @@ class WhatsAppBot {
   }
 
   /**
+   * Trata comandos especiais para detecção manual de dispositivo
+   */
+  handleDeviceDetectionCommands(messageText, fromNumber) {
+    const text = messageText.toLowerCase().trim();
+    
+    if (text === '/iphone' || text === '/ios') {
+      // Forçar detecção como iOS
+      const existingInfo = this.deviceInfo.get(fromNumber) || {};
+      this.deviceInfo.set(fromNumber, {
+        ...existingInfo,
+        isIOS: true,
+        manualDetection: true,
+        lastDetection: Date.now(),
+        messageCount: (existingInfo.messageCount || 0) + 1
+      });
+      
+      this.sendMessage(fromNumber, "📱 Dispositivo configurado como iOS/iPhone. Agora você receberá otimizações específicas para iOS!");
+      logger.info(`📱 Usuário ${fromNumber.substring(0, 10)}... configurado MANUALMENTE como iOS/iPhone`);
+      return true;
+    }
+    
+    if (text === '/android') {
+      // Forçar detecção como Android
+      const existingInfo = this.deviceInfo.get(fromNumber) || {};
+      this.deviceInfo.set(fromNumber, {
+        ...existingInfo,
+        isIOS: false,
+        manualDetection: true,
+        lastDetection: Date.now(),
+        messageCount: (existingInfo.messageCount || 0) + 1
+      });
+      
+      this.sendMessage(fromNumber, "🤖 Dispositivo configurado como Android. Usando configurações padrão.");
+      logger.info(`📱 Usuário ${fromNumber.substring(0, 10)}... configurado MANUALMENTE como Android`);
+      return true;
+    }
+
+    if (text === '/device' || text === '/dispositivo') {
+      // Mostrar informações do dispositivo atual
+      const deviceInfo = this.deviceInfo.get(fromNumber);
+      if (deviceInfo) {
+        const deviceType = deviceInfo.isIOS ? 'iOS/iPhone' : 'Android/Other';
+        const detectionMethod = deviceInfo.manualDetection ? 'Manual' : 'Automática';
+        const problemCount = deviceInfo.deliveryProblems || 0;
+        
+        this.sendMessage(fromNumber, 
+          `📱 *Informações do Dispositivo:*\n` +
+          `• Tipo: ${deviceType}\n` +
+          `• Detecção: ${detectionMethod}\n` +
+          `• Mensagens: ${deviceInfo.messageCount || 0}\n` +
+          `• Problemas de entrega: ${problemCount}\n\n` +
+          `Para alterar: /iphone ou /android`
+        );
+      } else {
+        this.sendMessage(fromNumber, 
+          `📱 *Dispositivo não detectado ainda.*\n\n` +
+          `Para configurar manualmente:\n` +
+          `• /iphone - Para iOS/iPhone\n` +
+          `• /android - Para Android\n` +
+          `• /device - Ver informações`
+        );
+      }
+      return true;
+    }
+
+    return false; // Não é um comando de dispositivo
+  }
+
+  /**
    * Detecta informações do dispositivo do usuário
    */
   detectDeviceInfo(message, fromNumber) {
     try {
+      // Verificar se já foi configurado manualmente
+      const existingInfo = this.deviceInfo.get(fromNumber);
+      if (existingInfo && existingInfo.manualDetection) {
+        // Apenas atualizar contador de mensagens
+        this.deviceInfo.set(fromNumber, {
+          ...existingInfo,
+          lastDetection: Date.now(),
+          messageCount: (existingInfo.messageCount || 0) + 1
+        });
+        return; // Não alterar detecção manual
+      }
+
       // Detectar iOS/iPhone através de características da mensagem
       const isIOS = this.detectIOSDevice(message);
       
       // Armazenar informação do dispositivo
-      const existingInfo = this.deviceInfo.get(fromNumber) || {};
       this.deviceInfo.set(fromNumber, {
         ...existingInfo,
         isIOS,
         lastDetection: Date.now(),
-        messageCount: (existingInfo.messageCount || 0) + 1
+        messageCount: (existingInfo?.messageCount || 0) + 1,
+        manualDetection: false
       });
 
-      if (isIOS && !existingInfo.isIOS) {
+      if (isIOS && !existingInfo?.isIOS) {
         logger.info(`📱 Usuário ${fromNumber.substring(0, 10)}... detectado como iOS/iPhone`);
       }
     } catch (error) {
@@ -1527,25 +1642,68 @@ class WhatsAppBot {
    */
   detectIOSDevice(message) {
     try {
-      // Características que indicam iOS
+      // Log de debug para entender a estrutura da mensagem
+      logger.debug('🔍 Analisando mensagem para detecção iOS:', {
+        pushName: message.pushName,
+        deviceType: message.deviceType,
+        messageContextInfo: message.message?.messageContextInfo,
+        hasDeviceListMetadata: !!message.message?.messageMetadata?.deviceListMetadata,
+        messageKeys: Object.keys(message.message || {}),
+        participant: message.key?.participant
+      });
+
+      // Método 1: Verificar características específicas do iOS no WhatsApp
       const messageMetadata = message.message?.messageMetadata;
-      const deviceInfo = message.deviceInfo;
-      
-      // Verificar características específicas do iOS no WhatsApp
       if (messageMetadata?.deviceListMetadata) {
-        return true; // Característica comum em iPhones
-      }
-      
-      // Verificar User-Agent ou características do cliente
-      if (message.message?.conversation && message.message.conversation.includes('iPhone')) {
+        logger.info('📱 iOS detectado via deviceListMetadata');
         return true;
       }
       
-      // Outros indicadores iOS (baseado em experiência com Baileys)
-      const hasIOSChars = message.pushName && /[\uD83C-\uDBFF\uDC00-\uDFFF]+/.test(message.pushName);
-      
-      return hasIOSChars;
+      // Método 2: Verificar context info que iOS costuma incluir
+      const contextInfo = message.message?.conversation?.contextInfo || 
+                          message.message?.extendedTextMessage?.contextInfo;
+      if (contextInfo?.deviceListMetadata) {
+        logger.info('📱 iOS detectado via contextInfo');
+        return true;
+      }
+
+      // Método 3: Análise do pushName (iOS tende a ter emojis ou chars específicos)
+      if (message.pushName) {
+        const hasIOSChars = /[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/u.test(message.pushName);
+        if (hasIOSChars) {
+          logger.info('📱 iOS detectado via emojis no pushName');
+          return true;
+        }
+      }
+
+      // Método 4: Verificar se mensagem contém características iOS específicas
+      const messageContent = message.message?.conversation || message.message?.extendedTextMessage?.text || '';
+      if (messageContent.includes('iPhone') || messageContent.includes('iOS')) {
+        logger.info('📱 iOS detectado via conteúdo da mensagem');
+        return true;
+      }
+
+      // Método 5: Verificar timestamp patterns (iOS tem timestamps específicos)
+      const timestamp = message.messageTimestamp;
+      if (timestamp && typeof timestamp === 'object' && timestamp.high !== undefined) {
+        logger.info('📱 iOS detectado via timestamp pattern');
+        return true;
+      }
+
+      // Método 6: Análise do participant format (grupos)
+      const participant = message.key?.participant;
+      if (participant && participant.includes('@')) {
+        // iOS devices em grupos às vezes têm patterns específicos
+        const isIOSPattern = /^55\d{10}@s\.whatsapp\.net$/.test(participant);
+        if (isIOSPattern) {
+          logger.info('📱 iOS detectado via participant pattern');
+          return true;  
+        }
+      }
+
+      return false;
     } catch (error) {
+      logger.warn('Erro na detecção iOS:', error.message);
       return false;
     }
   }
