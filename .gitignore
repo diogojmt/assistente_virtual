@@ -24,9 +24,6 @@ logs
 baileys_store*
 auth_info_baileys/
 
-# Audio transcription temporary files
-temp/
-
 # OS generated files
 .DS_Store
 Thumbs.db
@@ -35,4 +32,6 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Replit specific files are now included for automatic setup
+# Replit specific
+.replit
+replit.nix
